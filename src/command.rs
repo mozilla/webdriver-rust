@@ -435,7 +435,7 @@ impl ToJson for WindowSizeParameters {
 
 #[derive(PartialEq)]
 pub struct SwitchToWindowParameters {
-    handle: String
+    name: String
 }
 
 impl Parameters for SwitchToWindowParameters {
@@ -443,13 +443,13 @@ impl Parameters for SwitchToWindowParameters {
         let data = try_opt!(body.as_object(), ErrorStatus::UnknownError,
                             "Message body was not an object");
         let handle = try_opt!(
-            try_opt!(data.get("handle"),
+            try_opt!(data.get("name"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'handle' parameter").as_string(),
+                     "Missing 'name' parameter").as_string(),
             ErrorStatus::InvalidArgument,
-            "'handle' not a string");
+            "'name' not a string");
         return Ok(SwitchToWindowParameters {
-            handle: handle.to_string()
+            name: handle.to_string()
         })
     }
 }
@@ -457,7 +457,7 @@ impl Parameters for SwitchToWindowParameters {
 impl ToJson for SwitchToWindowParameters {
     fn to_json(&self) -> Json {
         let mut data = BTreeMap::new();
-        data.insert("handle".to_string(), self.handle.to_json());
+        data.insert("name".to_string(), self.name.to_json());
         Json::Object(data)
     }
 }
