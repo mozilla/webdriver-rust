@@ -17,6 +17,7 @@ pub enum WebDriverCommand {
     GoBack,
     GoForward,
     Refresh,
+    GetPageSource,
     GetTitle,
     GetWindowHandle,
     GetWindowHandles,
@@ -100,6 +101,7 @@ impl WebDriverMessage {
             Route::GoBack => WebDriverCommand::GoBack,
             Route::GoForward => WebDriverCommand::GoForward,
             Route::Refresh => WebDriverCommand::Refresh,
+            Route::GetPageSource => WebDriverCommand::GetPageSource,
             Route::GetTitle => WebDriverCommand::GetTitle,
             Route::GetWindowHandle => WebDriverCommand::GetWindowHandle,
             Route::GetWindowHandles => WebDriverCommand::GetWindowHandles,
@@ -286,7 +288,8 @@ impl ToJson for WebDriverMessage {
             WebDriverCommand::NewSession |
             WebDriverCommand::DeleteSession | WebDriverCommand::GetCurrentUrl |
             WebDriverCommand::GoBack | WebDriverCommand::GoForward | WebDriverCommand::Refresh |
-            WebDriverCommand::GetTitle | WebDriverCommand::GetWindowHandle |
+            WebDriverCommand::GetPageSource | WebDriverCommand::GetTitle |
+            WebDriverCommand::GetWindowHandle |
             WebDriverCommand::GetWindowHandles | WebDriverCommand::Close |
             WebDriverCommand::GetWindowSize | WebDriverCommand::MaximizeWindow |
             WebDriverCommand::SwitchToParentFrame | WebDriverCommand::IsDisplayed(_) |
