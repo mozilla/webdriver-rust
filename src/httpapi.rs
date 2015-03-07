@@ -6,7 +6,7 @@ use hyper::method::Method::{Get, Post, Delete};
 use command::{WebDriverMessage};
 use error::{WebDriverResult, WebDriverError, ErrorStatus};
 
-static ROUTES: [(Method, &'static str, Route); 43] = [
+static ROUTES: [(Method, &'static str, Route); 44] = [
     (Post, "/session", Route::NewSession),
     (Delete, "/session/{sessionId}", Route::DeleteSession),
     (Post, "/session/{sessionId}/url", Route::Get),
@@ -15,9 +15,10 @@ static ROUTES: [(Method, &'static str, Route); 43] = [
     (Post, "/session/{sessionId}/forward", Route::GoForward),
     (Post, "/session/{sessionId}/refresh", Route::Refresh),
     (Get, "/session/{sessionId}/title", Route::GetTitle),
+    (Get, "/session/{sessionId}/source", Route::GetPageSource),
     (Get, "/session/{sessionId}/window_handle", Route::GetWindowHandle),
     (Get, "/session/{sessionId}/window_handles", Route::GetWindowHandles),
-    (Delete, "/session/{sessionId}/window_handle", Route::Close),
+    (Delete, "/session/{sessionId}/window", Route::Close),
     (Post, "/session/{sessionId}/window/size", Route::SetWindowSize),
     (Get, "/session/{sessionId}/window/size", Route::GetWindowSize),
     (Post, "/session/{sessionId}/window/maximize", Route::MaximizeWindow),
@@ -62,6 +63,7 @@ pub enum Route {
     GoBack,
     GoForward,
     Refresh,
+    GetPageSource,
     GetTitle,
     GetWindowHandle,
     GetWindowHandles,
