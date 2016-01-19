@@ -17,6 +17,7 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     GoForward,
     Refresh,
     GetTitle,
+    GetPageSource,
     GetWindowHandle,
     GetWindowHandles,
     Close,
@@ -118,6 +119,7 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
             Route::GoForward => WebDriverCommand::GoForward,
             Route::Refresh => WebDriverCommand::Refresh,
             Route::GetTitle => WebDriverCommand::GetTitle,
+            Route::GetPageSource => WebDriverCommand::GetPageSource,
             Route::GetWindowHandle => WebDriverCommand::GetWindowHandle,
             Route::GetWindowHandles => WebDriverCommand::GetWindowHandles,
             Route::Close => WebDriverCommand::Close,
@@ -319,9 +321,9 @@ impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
             WebDriverCommand::NewSession |
             WebDriverCommand::DeleteSession | WebDriverCommand::GetCurrentUrl |
             WebDriverCommand::GoBack | WebDriverCommand::GoForward | WebDriverCommand::Refresh |
-            WebDriverCommand::GetTitle | WebDriverCommand::GetWindowHandle |
-            WebDriverCommand::GetWindowHandles | WebDriverCommand::Close |
-            WebDriverCommand::GetWindowSize | WebDriverCommand::MaximizeWindow |
+            WebDriverCommand::GetTitle | WebDriverCommand::GetPageSource |
+            WebDriverCommand::GetWindowHandle | WebDriverCommand::GetWindowHandles |
+            WebDriverCommand::Close | WebDriverCommand::GetWindowSize | WebDriverCommand::MaximizeWindow |
             WebDriverCommand::SwitchToParentFrame | WebDriverCommand::GetActiveElement |
             WebDriverCommand::IsDisplayed(_) | WebDriverCommand::IsSelected(_) |
             WebDriverCommand::GetElementAttribute(_, _) | WebDriverCommand::GetCSSValue(_, _) |
@@ -832,11 +834,11 @@ impl Parameters for SendAlertTextParameters {
         let data = try_opt!(body.as_object(), ErrorStatus::InvalidArgument,
                             "Message body was not an object");
         let keys = try_opt!(
-            try_opt!(data.get("message"),
+            try_opt!(data.get("text"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'message' parameter").as_string(),
+                     "Missing 'text' parameter").as_string(),
             ErrorStatus::InvalidArgument,
-            "'message' not a string").to_string();
+            "'text' not a string").to_string();
         return Ok(SendAlertTextParameters {
             message: keys
         })
