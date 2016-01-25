@@ -225,7 +225,6 @@ impl <U: WebDriverExtensionRoute> Handler for HttpHandler<U> {
                 res.headers_mut().set(ContentType::json());
                 let mut stream = res.start().unwrap();
                 stream.write_all(&resp_body.as_bytes()).unwrap();
-                stream.end().unwrap();
             },
             _ => {}
         }
