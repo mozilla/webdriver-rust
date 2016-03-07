@@ -1,11 +1,11 @@
 use std::marker::PhantomData;
-use std::io::{Write, Read};
+use std::io::Read;
 use std::sync::Mutex;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::thread;
 use std::net::SocketAddr;
 
-use hyper::header::{ContentLength, ContentType};
+use hyper::header::ContentType;
 use hyper::method::Method;
 use hyper::server::{Server, Handler, Request, Response};
 use hyper::uri::RequestUri::AbsolutePath;
@@ -221,10 +221,8 @@ impl <U: WebDriverExtensionRoute> Handler for HttpHandler<U> {
                     let resp_status = res.status_mut();
                     *resp_status = status;
                 }
-                res.headers_mut().set(ContentLength(resp_body.len() as u64));
                 res.headers_mut().set(ContentType::json());
-                let mut stream = res.start().unwrap();
-                stream.write_all(&resp_body.as_bytes()).unwrap();
+                res.send(&resp_body.as_bytes()).unwrap();
             },
             _ => {}
         }
@@ -239,7 +237,8 @@ pub fn start<T: 'static+WebDriverHandler<U>,
 
     let api = WebDriverHttpApi::new(extension_routes);
     let http_handler = HttpHandler::new(api, msg_send);
-    let server = Server::http(address).unwrap();
+    let mut server = Server::http(address).unwrap();
+    server.keep_alive(None);
 
     let builder = thread::Builder::new().name("webdriver dispatcher".to_string());
     builder.spawn(move || {
