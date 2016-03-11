@@ -118,7 +118,7 @@ impl <T: WebDriverHandler<U>,
                 match self.session {
                     Some(_) => {
                         match msg.command {
-                            WebDriverCommand::NewSession => {
+                            WebDriverCommand::NewSession(_) => {
                                 Err(WebDriverError::new(
                                     ErrorStatus::UnsupportedOperation,
                                     "Session is already started"))
@@ -134,7 +134,7 @@ impl <T: WebDriverHandler<U>,
                     },
                     None => {
                         match msg.command {
-                            WebDriverCommand::NewSession => Ok(()),
+                            WebDriverCommand::NewSession(_) => Ok(()),
 
                             _ => Err(WebDriverError::new(
                                 ErrorStatus::InvalidSessionId,
