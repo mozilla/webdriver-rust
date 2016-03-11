@@ -48,7 +48,7 @@ fn standard_routes<U:WebDriverExtensionRoute>() -> Vec<(Method, &'static str, Ro
                 (Delete, "/session/{sessionId}/cookie", Route::DeleteCookies),
                 (Delete, "/session/{sessionId}/cookie/{name}", Route::DeleteCookie),
                 (Post, "/session/{sessionId}/timeouts", Route::SetTimeouts),
-                //(Post, "/session/{sessionId}/actions", Route::Actions),
+                (Post, "/session/{sessionId}/actions", Route::Actions),
                 (Post, "/session/{sessionId}/element/{elementId}/click", Route::ElementClick),
                 (Post, "/session/{sessionId}/element/{elementId}/tap", Route::ElementTap),
                 (Post, "/session/{sessionId}/element/{elementId}/clear", Route::ElementClear),
@@ -112,7 +112,7 @@ pub enum Route<U:WebDriverExtensionRoute> {
     DeleteCookies,
     DeleteCookie,
     SetTimeouts,
-    //Actions XXX - once I understand the spec, perhaps
+    Actions,
     ElementClick,
     ElementTap,
     ElementClear,
