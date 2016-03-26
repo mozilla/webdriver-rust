@@ -15,6 +15,23 @@ pub mod server;
 pub mod response;
 
 
-#[test]
-fn it_works() {
+#[cfg(test)]
+mod nullable_tests {
+    use super::common::Nullable;
+
+    #[test]
+    fn test_nullable_map() {
+        let mut test = Nullable::Value(21);
+
+        assert_eq!(test.map(|x| x << 1), Nullable::Value(42));
+
+        test = Nullable::Null;
+
+        assert_eq!(test.map(|x| x << 1), Nullable::Null);
+    }
+
+    #[test]
+    fn test_nullable_into() {
+        let _: Option<i32> = Nullable::Value(42).into();
+    }
 }
