@@ -316,7 +316,6 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
 
 impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
     fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
         let parameters = match self.command {
             WebDriverCommand::NewSession |
             WebDriverCommand::DeleteSession | WebDriverCommand::GetCurrentUrl |
@@ -353,8 +352,10 @@ impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
             WebDriverCommand::SendAlertText(ref x) => Some(x.to_json()),
             WebDriverCommand::Extension(ref x) => x.parameters_json(),
         };
-        if parameters.is_some() {
-            data.insert("parameters".to_string(), parameters.unwrap());
+
+        let mut data = BTreeMap::new();
+        if let Some(parameters) = parameters {
+            data.insert("parameters".to_string(), parameters);
         }
         Json::Object(data)
     }
