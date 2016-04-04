@@ -94,13 +94,9 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
         let body_data = if requires_body {
             debug!("Got request body {}", body);
             match Json::from_str(body) {
-                Ok(x) => {
-                    match x {
-                        Json::Object(_) => x,
-                        _ => return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
-                                                         "Body was not a json object"))
-                    }
-                },
+                Ok(x @ Json::Object(_)) => x,
+                Ok(_) => return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
+                                                        "Body was not a json object")),
                 Err(_) => return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                                                          &format!("Failed to decode request body as json: {}", body)[..]))
             }
