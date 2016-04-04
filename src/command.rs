@@ -98,7 +98,7 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
                 Ok(_) => return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                                                         "Body was not a json object")),
                 Err(_) => return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
-                                                         &format!("Failed to decode request body as json: {}", body)[..]))
+                                                         format!("Failed to decode request body as json: {}", body)))
             }
         } else {
             Json::Null
