@@ -1,6 +1,7 @@
 use rustc_serialize::json;
 
 use common::{Nullable, Date};
+use time;
 
 #[derive(Debug)]
 pub enum WebDriverResponse {
@@ -96,7 +97,7 @@ pub struct Cookie {
     pub value: String,
     pub path: Nullable<String>,
     pub domain: Nullable<String>,
-    pub expiry: Nullable<Date>,
+    pub expiry: Nullable<i64>,
     pub maxAge: Nullable<Date>,
     pub secure: bool,
     pub httpOnly: bool
@@ -104,7 +105,7 @@ pub struct Cookie {
 
 impl Cookie {
     pub fn new(name: String, value: String, path: Nullable<String>, domain: Nullable<String>,
-               expiry: Nullable<Date>, max_age: Nullable<Date>, secure: bool, http_only: bool) -> Cookie {
+               expiry: Nullable<i64>, max_age: Nullable<Date>, secure: bool, http_only: bool) -> Cookie {
         Cookie {
             name: name,
             value: value,

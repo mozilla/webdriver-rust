@@ -1,6 +1,7 @@
 use regex::Captures;
 use rustc_serialize::json::{ToJson, Json};
 use std::collections::BTreeMap;
+use time;
 
 use common::{Date, Nullable, WebElement, FrameId, LocatorStrategy};
 use error::{WebDriverResult, WebDriverError, ErrorStatus};
@@ -695,7 +696,7 @@ pub struct AddCookieParameters {
     pub value: String,
     pub path: Nullable<String>,
     pub domain: Nullable<String>,
-    pub expiry: Nullable<Date>,
+    pub expiry: Nullable<i64>,
     pub maxAge: Nullable<Date>,
     pub secure: bool,
     pub httpOnly: bool
@@ -752,28 +753,38 @@ impl Parameters for AddCookieParameters {
             None => Nullable::Null
         };
 
-        //TODO: This is supposed to support some text format
         let expiry = match data.get("expiry") {
             Some(expiry_json) => {
                 try!(Nullable::from_json(
                     expiry_json,
                     |x| {
-                        Ok(Date::new(try_opt!(x.as_u64(),
-                                              ErrorStatus::InvalidArgument,
-                                              "Failed to convert expiry to Date")))
+                        let ds = x.to_string();
+                        let parsed_date = time::strptime(&*ds, "\"%a, %d %b %Y %H:%M:%S %Z\"")
+                            .or_else(|_| time::strptime(&*ds, "\"%A, %d-%b-%y %H:%M:%S %Z\""))
+                            .or_else(|_| time::strptime(&*ds, "\"%a, %d-%b-%Y %H:%M:%S %Z\""))
+                            .or_else(|_| time::strptime(&*ds, "\"%a %b %d %H:%M:%S %Y\""));
+                        let date = match parsed_date {
+                            Ok(date) => date,
+                            Err(_) => return Err(WebDriverError::new(
+                                    ErrorStatus::InvalidArgument,
+                                    "Failed to convert expiry to Date"
+                                    )),
+                        };
+                        Ok(date.to_timespec().sec)
                     }))
             },
             None => Nullable::Null
         };
 
-        let max_age = match data.get("maxAge") {
+        let max_age = match data.get("max-age") {
             Some(max_age_json) => {
                 try!(Nullable::from_json(
                     max_age_json,
                     |x| {
-                        Ok(Date::new(try_opt!(x.as_u64(),
-                                              ErrorStatus::InvalidArgument,
-                                              "Failed to convert expiry to Date")))
+                        let date = try_opt!(x.as_u64(),
+                                            ErrorStatus::InvalidArgument,
+                                            "Failed to convert max-age to Date");
+                        Ok(Date::new(date + (time::get_time().sec as u64)))
                     }))
             },
             None => Nullable::Null
@@ -880,5 +891,78 @@ impl ToJson for TakeScreenshotParameters {
         let mut data = BTreeMap::new();
         data.insert("element".to_string(), self.element.to_json());
         Json::Object(data)
+    }
+}
+
+#[cfg(test)]
+mod cookie_tests {
+    use rustc_serialize::json::Json;
+    use time;
+
+    use common::Nullable;
+
+    use super::AddCookieParameters;
+    use super::Parameters;
+
+    #[test]
+    fn test_basic() {
+        let testdata = Json::from_str(
+            "{\
+                \"cookie\": {\
+                    \"name\": \"test1\",\
+                    \"value\": \"42\"\
+                }\
+            }"
+        ).unwrap();
+        let cookie: AddCookieParameters = match Parameters::from_json(&testdata) {
+            Ok(res) => res,
+            Err(e) => panic!("Failed to parse json: {:?}", e)
+        };
+        assert_eq!(cookie.name, "test1");
+        assert_eq!(cookie.value, "42");
+    }
+
+    #[test]
+    fn test_max_age() {
+        let testdata = Json::from_str(
+            "{\
+                \"cookie\": {\
+                    \"name\": \"test2\",\
+                    \"value\": \"42\",\
+                    \"max-age\": 600
+                }\
+            }"
+        ).unwrap();
+        let prior_time = time::get_time().sec as u64;
+        let cookie: AddCookieParameters = match Parameters::from_json(&testdata) {
+            Ok(res) => res,
+            Err(e) => panic!("Failed to parse json: {:?}", e)
+        };
+        assert_eq!(cookie.name, "test2");
+        assert_eq!(cookie.value, "42");
+        assert!(match cookie.maxAge {
+            Nullable::Value(date) => date.0 > prior_time,
+            Nullable::Null => false
+        });
+    }
+
+    #[test]
+    fn test_expiry() {
+        let testdata = Json::from_str(
+            "{\
+                \"cookie\": {\
+                    \"name\": \"test2\",\
+                    \"value\": \"42\",\
+                    \"expiry\": \"Sun, 23 Nov 2014 20:00:00 UTC\"\
+                }\
+            }"
+        ).unwrap();
+        let cookie: AddCookieParameters = match Parameters::from_json(&testdata) {
+            Ok(res) => res,
+            Err(e) => panic!("Failed to parse json: {:?}", e)
+        };
+        assert_eq!(cookie.name, "test2");
+        assert_eq!(cookie.value, "42");
+        assert_eq!(cookie.expiry, Nullable::Value(1416772800));
     }
 }

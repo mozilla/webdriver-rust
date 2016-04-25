@@ -5,6 +5,7 @@ extern crate log;
 extern crate rustc_serialize;
 extern crate hyper;
 extern crate regex;
+extern crate time;
 
 #[macro_use] pub mod macros;
 pub mod httpapi;
