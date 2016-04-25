@@ -1,6 +1,7 @@
 use rustc_serialize::json;
 
 use common::{Nullable, Date};
+use time;
 
 #[derive(Debug)]
 pub enum WebDriverResponse {
