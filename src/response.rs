@@ -1,5 +1,8 @@
 use rustc_serialize::json;
 
+#[cfg(serialize)]
+use serde::{Serialize, Deserialize};
+
 use common::{Nullable, Date};
 
 #[derive(Debug)]
@@ -90,6 +93,19 @@ impl ElementRectResponse {
 }
 
 //TODO: some of these fields are probably supposed to be optional
+#[cfg(serialize)]
+#[derive(RustcEncodable, PartialEq, Debug, Clone, Serialize, Deserialize)]
+pub struct Cookie {
+    pub name: String,
+    pub value: String,
+    pub path: Nullable<String>,
+    pub domain: Nullable<String>,
+    pub expiry: Nullable<Date>,
+    pub secure: bool,
+    pub httpOnly: bool
+}
+
+#[cfg(not(serialize))]
 #[derive(RustcEncodable, PartialEq, Debug, Clone)]
 pub struct Cookie {
     pub name: String,

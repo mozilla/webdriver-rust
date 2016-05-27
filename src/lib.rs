@@ -14,6 +14,9 @@ pub mod error;
 pub mod server;
 pub mod response;
 
+#[cfg(serialize)]
+extern crate serde;
+
 
 #[cfg(test)]
 mod nullable_tests {
