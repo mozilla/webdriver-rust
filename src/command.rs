@@ -197,8 +197,8 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
                                           "Missing elementId parameter");
                 let element = WebElement::new(element_id.to_string());
                 let property = try_opt!(params.name("name"),
-                                    ErrorStatus::InvalidArgument,
-                                    "Missing name parameter").to_string();
+                                        ErrorStatus::InvalidArgument,
+                                        "Missing name parameter").to_string();
                 WebDriverCommand::GetElementProperty(element, property)
             },
             Route::GetCSSValue => {
