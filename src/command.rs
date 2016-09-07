@@ -404,19 +404,26 @@ impl Parameters for NewSessionParameters {
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
 
+        let capabilities = try_opt!(
+            try_opt!(data.get("capabilities"),
+                     ErrorStatus::SessionNotCreated,
+                     "Missing 'capabilities' parameter").as_object(),
+            ErrorStatus::SessionNotCreated,
+            "'capabilities' parameter is not an object");
+
         let desired_capabilities =
-            if let Some(capabilities) = data.get("desiredCapabilities") {
-                try_opt!(capabilities.as_object(),
-                         ErrorStatus::InvalidArgument,
+            if let Some(desired) = capabilities.get("desiredCapabilities") {
+                try_opt!(desired.as_object(),
+                         ErrorStatus::SessionNotCreated,
                          "'desiredCapabilities' parameter is not an object").clone()
             } else {
                 BTreeMap::new()
             };
 
         let required_capabilities =
-            if let Some(capabilities) = data.get("requiredCapabilities") {
-                try_opt!(capabilities.as_object(),
-                         ErrorStatus::InvalidArgument,
+            if let Some(required) = capabilities.get("requiredCapabilities") {
+                try_opt!(required.as_object(),
+                         ErrorStatus::SessionNotCreated,
                          "'requiredCapabilities' parameter is not an object").clone()
             } else {
                 BTreeMap::new()
