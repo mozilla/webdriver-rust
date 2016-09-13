@@ -50,7 +50,7 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
     DeleteCookies,
     DeleteCookie(String),
     SetTimeouts(TimeoutsParameters),
-    //Actions(ActionsParameters),
+    Actions(ActionsParameters),
     ElementClick(WebElement),
     ElementTap(WebElement),
     ElementClear(WebElement),
@@ -123,6 +123,10 @@ impl <U: WebDriverExtensionRoute> WebDriverMessage<U> {
             Route::GetWindowHandle => WebDriverCommand::GetWindowHandle,
             Route::GetWindowHandles => WebDriverCommand::GetWindowHandles,
             Route::Close => WebDriverCommand::Close,
+            Route::Actions => {
+                let parameters: ActionsParameters = try!(Parameters::from_json(&body_data));
+                WebDriverCommand::Actions(parameters)
+            },
             Route::SetTimeouts => {
                 let parameters: TimeoutsParameters = try!(Parameters::from_json(&body_data));
                 WebDriverCommand::SetTimeouts(parameters)
@@ -344,6 +348,7 @@ impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
             WebDriverCommand::DismissAlert | WebDriverCommand::AcceptAlert |
             WebDriverCommand::GetAlertText | WebDriverCommand::ElementClick(_) |
             WebDriverCommand::ElementTap(_) | WebDriverCommand::ElementClear(_) |
+            WebDriverCommand::Actions(_) |
             WebDriverCommand::TakeScreenshot => {
                 None
             },
@@ -637,6 +642,34 @@ impl ToJson for SwitchToFrameParameters {
     fn to_json(&self) -> Json {
         let mut data = BTreeMap::new();
         data.insert("id".to_string(), self.id.to_json());
+        Json::Object(data)
+    }
+}
+
+#[derive(PartialEq)]
+pub struct ActionsParameters {
+    pub chain: Nullable<Vec<Json>>
+}
+
+impl Parameters for ActionsParameters {
+    fn from_json(body: &Json) -> WebDriverResult<ActionsParameters> {
+        let data = try_opt!(body.as_object(),
+                            ErrorStatus::InvalidArgument,
+                            "Message body was not an object");
+        let actions = try!(Nullable::from_json(
+                        try_opt!(data.get("actions"),
+                                 ErrorStatus::UnknownError,
+                                 "Missing 'action' parameter")));
+        Ok(ActionsParameters {
+            chain: actions
+        })
+    }
+}
+
+impl ToJson for ActionsParameters {
+    fn to_json(&self) -> Json {
+        let mut data = BTreeMap::new();
+        data.insert("chain".to_string(), self.chain.to_json());
         Json::Object(data)
     }
 }
