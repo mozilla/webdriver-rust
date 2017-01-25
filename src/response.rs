@@ -7,27 +7,29 @@ use std::collections::BTreeMap;
 
 #[derive(Debug)]
 pub enum WebDriverResponse {
-    NewSession(NewSessionResponse),
-    DeleteSession,
-    WindowSize(WindowSizeResponse),
-    WindowPosition(WindowPositionResponse),
-    ElementRect(ElementRectResponse),
+    CloseWindow(ValueResponse),
     Cookie(CookieResponse),
+    DeleteSession,
+    ElementRect(ElementRectResponse),
     Generic(ValueResponse),
-    Void
+    NewSession(NewSessionResponse),
+    Void,
+    WindowPosition(WindowPositionResponse),
+    WindowSize(WindowSizeResponse),
 }
 
 impl WebDriverResponse {
     pub fn to_json_string(self) -> String {
         match self {
-            WebDriverResponse::NewSession(x) => json::encode(&x),
-            WebDriverResponse::DeleteSession => Ok("{}".to_string()),
-            WebDriverResponse::WindowSize(x) => json::encode(&x),
-            WebDriverResponse::WindowPosition(x) => json::encode(&x),
-            WebDriverResponse::ElementRect(x) => json::encode(&x),
+            WebDriverResponse::CloseWindow(x) => json::encode(&x),
             WebDriverResponse::Cookie(x) => json::encode(&x),
+            WebDriverResponse::DeleteSession => Ok("{}".to_string()),
+            WebDriverResponse::ElementRect(x) => json::encode(&x),
             WebDriverResponse::Generic(x) => json::encode(&x),
-            WebDriverResponse::Void => Ok("{}".to_string())
+            WebDriverResponse::NewSession(x) => json::encode(&x),
+            WebDriverResponse::Void => Ok("{}".to_string()),
+            WebDriverResponse::WindowPosition(x) => json::encode(&x),
+            WebDriverResponse::WindowSize(x) => json::encode(&x),
         }.unwrap()
     }
 }
