@@ -167,35 +167,30 @@ impl Error for WebDriverError {
 
 impl From<ParserError> for WebDriverError {
     fn from(err: ParserError) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError,
-            err.description().to_string())
+        WebDriverError::new(ErrorStatus::UnknownError, err.description())
     }
 }
 
 impl From<IoError> for WebDriverError {
     fn from(err: IoError) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError,
-            err.description().to_string())
+        WebDriverError::new(ErrorStatus::UnknownError, err.description())
     }
 }
 
 impl From<DecoderError> for WebDriverError {
     fn from(err: DecoderError) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError,
-                            err.description().to_string())
+        WebDriverError::new(ErrorStatus::UnknownError, err.description())
     }
 }
 
 impl From<FromBase64Error> for WebDriverError {
     fn from(err: FromBase64Error) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError,
-                            err.description().to_string())
+        WebDriverError::new(ErrorStatus::UnknownError, err.description())
     }
 }
 
 impl From<Box<Error>> for WebDriverError {
     fn from(err: Box<Error>) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError,
-                            err.description().to_string())
+        WebDriverError::new(ErrorStatus::UnknownError, err.description())
     }
 }
