@@ -428,30 +428,226 @@ pub trait Parameters: Sized {
     fn from_json(body: &Json) -> WebDriverResult<Self>;
 }
 
-#[derive(PartialEq)]
-pub struct NewSessionParameters {
-    pub desired: BTreeMap<String, Json>,
-    pub required: BTreeMap<String, Json>,
+pub trait BrowserCapabilities {
+    fn init(&mut self, &BTreeMap<String, Json>);
+    fn browser_name(&mut self, &BTreeMap<String, Json>) -> Option<String>;
+    fn browser_version(&mut self, &BTreeMap<String, Json>) -> Option<String>;
+    fn platform_name(&mut self, &BTreeMap<String, Json>) -> Option<String>;
+    fn platform_version(&mut self, &BTreeMap<String, Json>) -> Option<String>;
+    fn accept_insecure_certs(&mut self, &BTreeMap<String, Json>) -> bool;
+    fn compare_browser_version(&mut self, &str, &str) -> WebDriverResult<bool>;
 }
 
-impl NewSessionParameters {
-    pub fn get(&self, name: &str) -> Option<&Json> {
-        self.required.get(name).or_else(|| self.desired.get(name))
-    }
+pub trait CapabilitiesMatching {
+    fn match_browser<T: BrowserCapabilities>(&self, browser_capabilities: &mut T)
+                                             -> Option<BTreeMap<String, Json>>;
+}
 
-    pub fn consume(&mut self, name: &str) -> Option<Json> {
-        let required = self.required.remove(name);
-        let desired = self.desired.remove(name);
-        if required.is_some() {
-            required
-        } else {
-            desired
-        }
-    }
+#[derive(PartialEq)]
+pub enum NewSessionParameters {
+    Spec(SpecNewSessionParameters),
+    Legacy(LegacyNewSessionParameters)
 }
 
 impl Parameters for NewSessionParameters {
     fn from_json(body: &Json) -> WebDriverResult<NewSessionParameters> {
+        let data = try_opt!(body.as_object(),
+                            ErrorStatus::UnknownError,
+                            "Message body was not an object");
+        if data.get("capabilities").is_some() {
+            Ok(NewSessionParameters::Spec(try!(SpecNewSessionParameters::from_json(body))))
+        } else {
+            Ok(NewSessionParameters::Legacy(try!(LegacyNewSessionParameters::from_json(body))))
+        }
+    }
+}
+
+impl ToJson for NewSessionParameters {
+    fn to_json(&self) -> Json {
+        match self {
+            &NewSessionParameters::Spec(ref x) => x.to_json(),
+            &NewSessionParameters::Legacy(ref x) => x.to_json()
+        }
+    }
+}
+
+impl CapabilitiesMatching for NewSessionParameters {
+    fn match_browser<T: BrowserCapabilities>(&self, browser_capabilities: &mut T)
+                                             -> Option<BTreeMap<String, Json>> {
+        match self {
+            &NewSessionParameters::Spec(ref x) => x.match_browser(browser_capabilities),
+            &NewSessionParameters::Legacy(ref x) => x.match_browser(browser_capabilities)
+        }
+    }
+}
+
+#[derive(PartialEq)]
+pub struct SpecNewSessionParameters {
+    pub alwaysMatch: BTreeMap<String, Json>,
+    pub firstMatch: Vec<BTreeMap<String, Json>>,
+}
+
+impl Parameters for SpecNewSessionParameters {
+    fn from_json(body: &Json) -> WebDriverResult<SpecNewSessionParameters> {
+        let data = try_opt!(body.as_object(),
+                            ErrorStatus::UnknownError,
+                            "Message body was not an object");
+
+        let capabilities = try_opt!(
+            try_opt!(data.get("capabilities"),
+                     ErrorStatus::InvalidArgument,
+                     "Missing 'capabilities' parameter").as_object(),
+            ErrorStatus::InvalidArgument,
+                     "'capabilities' parameter is not an object");
+
+        let defaultAlwaysMatch = Json::Object(BTreeMap::new());
+        let alwaysMatch = try_opt!(capabilities.get("alwaysMatch")
+                                   .unwrap_or(&defaultAlwaysMatch)
+                                   .as_object(),
+                                   ErrorStatus::InvalidArgument,
+                                   "'alwaysMatch' parameter is not an object");
+        let defaultFirstMatch = Json::Array(vec![]);
+        let firstMatch = try!(
+            try_opt!(capabilities.get("alwaysMatch")
+                     .unwrap_or(&defaultFirstMatch)
+                     .as_array(),
+                     ErrorStatus::InvalidArgument,
+                     "'firstMatch' parameter is not an array")
+                .iter()
+                .map(|x| x.as_object()
+                     .map(|x| x.clone())
+                     .ok_or(WebDriverError::new(ErrorStatus::InvalidArgument,
+                                                "'firstMatch' entry is not an object")))
+                .collect::<WebDriverResult<Vec<BTreeMap<String, Json>>>>());
+
+
+        if firstMatch
+            .iter()
+            .map(|x| x.keys().any(
+                |key| alwaysMatch.contains_key(key)))
+            .any(|x| x) {
+                return Err(WebDriverError::new(
+                    ErrorStatus::InvalidArgument,
+                    "'firstMatch' entry contains a key in 'alwaysMatch'"));
+            }
+        return Ok(SpecNewSessionParameters {
+            alwaysMatch: alwaysMatch.clone(),
+            firstMatch: firstMatch
+        });
+    }
+}
+
+impl ToJson for SpecNewSessionParameters {
+    fn to_json(&self) -> Json {
+        let mut data = BTreeMap::new();
+        let mut capabilities = BTreeMap::new();
+        capabilities.insert("alwaysMatch".into(), self.alwaysMatch.to_json());
+        capabilities.insert("firstMatch".into(), self.firstMatch.to_json());
+        data.insert("capabilities".into(), capabilities.to_json());
+        Json::Object(data)
+    }
+}
+
+impl CapabilitiesMatching for SpecNewSessionParameters {
+    fn match_browser<T: BrowserCapabilities>(&self, browser_capabilities: &mut T)
+                                             -> Option<BTreeMap<String, Json>> {
+        let default = vec![BTreeMap::new()];
+        let capabilitiesList = if self.firstMatch.len() > 0 {
+            &self.firstMatch
+        } else {
+            &default
+        };
+        capabilitiesList
+            .iter()
+            .filter_map(|firstMatchEntry| {
+                let mut merged = self.alwaysMatch.clone();
+                merged.append(&mut firstMatchEntry.clone());
+
+                browser_capabilities.init(&merged);
+
+                let browser_name = merged.get("browserName")
+                    .and_then(|x| x.as_string())
+                    .map(|x| x.to_owned());
+                if let Some(name) = browser_name {
+                    if name.as_str() != "*" &&
+                        Some(name) != browser_capabilities.browser_name(&merged) {
+                            return None;
+                        }
+                }
+                let browser_version = merged.get("browserVersion")
+                    .and_then(|x| x.as_string())
+                    .map(|x| x.to_owned());
+                if let Some(version_cond) = browser_version {
+                    if version_cond.as_str() != "*" {
+                        let found_version = browser_capabilities.browser_version(&merged);
+                        if let Some(version) = found_version {
+                            if !browser_capabilities.compare_browser_version(&*version,
+                                                                             &*version_cond)
+                                .unwrap_or(false) {
+                                return None;
+                            }
+                        } else {
+                            return None;
+                        }
+                    }
+                }
+                let platform_name = merged.get("platformName")
+                    .and_then(|x| x.as_string())
+                    .map(|x| x.to_owned());
+                if let Some(name) = platform_name {
+                    if name.as_str() != "*" &&
+                        Some(name) != browser_capabilities.platform_name(&merged) {
+                            return None;
+                        }
+                }
+                let platform_version = merged.get("platformVersion")
+                    .and_then(|x| x.as_string())
+                    .map(|x| x.to_owned());
+                if let Some(version) = platform_version {
+                    if version.as_str() != "*" &&
+                        Some(version) != browser_capabilities.platform_version(&merged) {
+                            return None;
+                        }
+                }
+                let accept_insecure_certs = merged.get("acceptInsecureCerts")
+                    .and_then(|x| x.as_boolean())
+                    .unwrap_or(false);
+                if accept_insecure_certs &&
+                    !browser_capabilities.accept_insecure_certs(&merged) {
+                    return None;
+                }
+
+                return Some(merged)
+            })
+            .next()
+    }
+}
+
+#[derive(PartialEq)]
+pub struct LegacyNewSessionParameters {
+    pub desired: BTreeMap<String, Json>,
+    pub required: BTreeMap<String, Json>,
+}
+
+impl CapabilitiesMatching for LegacyNewSessionParameters {
+    fn match_browser<T: BrowserCapabilities>(&self, browser_capabilities: &mut T)
+                                             -> Option<BTreeMap<String, Json>> {
+        /* For now don't do anything much, just merge the
+        desired and required and return the merged list. */
+
+        let mut capabilities: BTreeMap<String, Json> = BTreeMap::new();
+        self.required.iter()
+            .chain(self.desired.iter()
+                   .filter(|&(key, _)| !self.required.contains_key(key)))
+            .fold(&mut capabilities,
+                  |mut caps, (key, value)| {caps.insert(key.clone(), value.clone()); caps});
+        browser_capabilities.init(&capabilities);
+        Some(capabilities)
+    }
+}
+
+impl Parameters for LegacyNewSessionParameters {
+    fn from_json(body: &Json) -> WebDriverResult<LegacyNewSessionParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -474,14 +670,14 @@ impl Parameters for NewSessionParameters {
                 BTreeMap::new()
             };
 
-        Ok(NewSessionParameters {
+        Ok(LegacyNewSessionParameters {
             desired: desired_capabilities,
             required: required_capabilities
         })
     }
 }
 
-impl ToJson for NewSessionParameters {
+impl ToJson for LegacyNewSessionParameters {
     fn to_json(&self) -> Json {
         let mut data = BTreeMap::new();
         data.insert("desiredCapabilities".to_owned(), self.desired.to_json());
