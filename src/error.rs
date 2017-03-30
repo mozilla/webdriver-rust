@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::convert::From;
 use std::error::Error;
 use std::fmt;
-use std::io::Error as IoError;
+use std::io;
 
 #[derive(PartialEq, Debug)]
 pub enum ErrorStatus {
@@ -221,12 +221,6 @@ pub struct WebDriverError {
     pub delete_session: bool,
 }
 
-impl fmt::Display for WebDriverError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.message.fmt(f)
-    }
-}
-
 impl WebDriverError {
     pub fn new<S>(error: ErrorStatus, message: S) -> WebDriverError
         where S: Into<Cow<'static, str>>
@@ -275,14 +269,20 @@ impl Error for WebDriverError {
     }
 }
 
+impl fmt::Display for WebDriverError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.message.fmt(f)
+    }
+}
+
 impl From<ParserError> for WebDriverError {
     fn from(err: ParserError) -> WebDriverError {
         WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
     }
 }
 
-impl From<IoError> for WebDriverError {
-    fn from(err: IoError) -> WebDriverError {
+impl From<io::Error> for WebDriverError {
+    fn from(err: io::Error) -> WebDriverError {
         WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
     }
 }
