@@ -417,9 +417,11 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                             }
                         }
                         "acceptInsecureCerts" => {
-                            !browser_capabilities
-                            .accept_insecure_certs(merged)
-                            .unwrap_or(false);
+                            if browser_capabilities
+                                .accept_insecure_certs(merged)
+                                .unwrap_or(false) {
+                                    return None;
+                                }
                         },
                         "proxy" => {
                             let default = BTreeMap::new();
