@@ -94,7 +94,7 @@ impl SpecNewSessionParameters {
                 x @ "browserVersion" |
                 x @ "platformName" => if !value.is_string() {
                         return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
-                                                       format!("{} was not a boolean", x)))
+                                                       format!("{} was not a string", x)))
                     },
                 "pageLoadStrategy" => {
                     try!(SpecNewSessionParameters::validate_page_load_strategy(value))
@@ -426,12 +426,11 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                             }
                         }
                         "acceptInsecureCerts" => {
-                            if value.as_boolean().unwrap_or(false) &&
-                                !browser_capabilities
+                            if browser_capabilities
                                 .accept_insecure_certs(merged)
                                 .unwrap_or(false) {
-                                return None;
-                            }
+                                    return None;
+                                }
                         },
                         "proxy" => {
                             let default = BTreeMap::new();
