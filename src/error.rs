@@ -1,13 +1,12 @@
 use backtrace::Backtrace;
 use hyper::status::StatusCode;
-use rustc_serialize::base64::FromBase64Error;
-use rustc_serialize::json::{DecoderError, Json, ParserError, ToJson};
+use base64::DecodeError;
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 use std::convert::From;
 use std::error::Error;
 use std::fmt;
 use std::io;
+use serde_json::{self, Value, Error as SerdeError, Map};
 
 #[derive(PartialEq, Debug)]
 pub enum ErrorStatus {
@@ -254,20 +253,20 @@ impl WebDriverError {
     }
 
     pub fn to_json_string(&self) -> String {
-        self.to_json().to_string()
+        serde_json::to_string(&Value::from(self)).unwrap()
     }
 }
 
-impl ToJson for WebDriverError {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("error".into(), self.error_code().to_json());
-        data.insert("message".into(), self.message.to_json());
-        data.insert("stacktrace".into(), self.stack.to_json());
-
-        let mut wrapper = BTreeMap::new();
-        wrapper.insert("value".into(), Json::Object(data));
-        Json::Object(wrapper)
+impl <'a> From<&'a WebDriverError> for Value {
+    fn from(err: &'a WebDriverError) -> Value {
+        let mut data = Map::new();
+        data.insert("error".into(), err.error_code().into());
+        data.insert("message".into(), err.message.clone().into());
+        data.insert("stacktrace".into(),
+                    format!("{:?}", err.stack).into());
+        let mut wrapper = Map::new();
+        wrapper.insert("value".into(), Value::Object(data));
+        Value::Object(wrapper)
     }
 }
 
@@ -287,8 +286,8 @@ impl fmt::Display for WebDriverError {
     }
 }
 
-impl From<ParserError> for WebDriverError {
-    fn from(err: ParserError) -> WebDriverError {
+impl From<SerdeError> for WebDriverError {
+    fn from(err: SerdeError) -> WebDriverError {
         WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
     }
 }
@@ -299,14 +298,8 @@ impl From<io::Error> for WebDriverError {
     }
 }
 
-impl From<DecoderError> for WebDriverError {
-    fn from(err: DecoderError) -> WebDriverError {
-        WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
-    }
-}
-
-impl From<FromBase64Error> for WebDriverError {
-    fn from(err: FromBase64Error) -> WebDriverError {
+impl From<DecodeError> for WebDriverError {
+    fn from(err: DecodeError) -> WebDriverError {
         WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
     }
 }

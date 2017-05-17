@@ -1,11 +1,11 @@
 use command::Parameters;
-use error::{ErrorStatus, WebDriverError, WebDriverResult};
-use rustc_serialize::json::{Json, ToJson};
-use std::collections::BTreeMap;
 use std::net::Ipv6Addr;
+use error::{WebDriverResult, WebDriverError, ErrorStatus};
+use std::convert::From;
+use serde_json::{Value, Map};
 use url::Url;
 
-pub type Capabilities = BTreeMap<String, Json>;
+pub type Capabilities = Map<String, Value>;
 
 /// Trait for objects that can be used to inspect browser capabilities
 ///
@@ -35,19 +35,19 @@ pub trait BrowserCapabilities {
     /// Whether insecure certificates are supported
     fn accept_insecure_certs(&mut self, &Capabilities) -> WebDriverResult<bool>;
 
-    fn accept_proxy(&mut self, proxy_settings: &BTreeMap<String, Json>, &Capabilities) -> WebDriverResult<bool>;
+    fn accept_proxy(&mut self, proxy_settings: &Map<String, Value>, &Capabilities) -> WebDriverResult<bool>;
 
     /// Type check custom properties
     ///
     /// Check that custom properties containing ":" have the correct data types.
     /// Properties that are unrecognised must be ignored i.e. return without
     /// error.
-    fn validate_custom(&self, name: &str, value: &Json) -> WebDriverResult<()>;
+    fn validate_custom(&self, name: &str, value: &Value) -> WebDriverResult<()>;
     /// Check if custom properties are accepted capabilites
     ///
     /// Check that custom properties containing ":" are compatible with
     /// the implementation.
-    fn accept_custom(&mut self, name: &str, value: &Json, merged: &Capabilities) -> WebDriverResult<bool>;
+    fn accept_custom(&mut self, name: &str, value: &Value, merged: &Capabilities) -> WebDriverResult<bool>;
 }
 
 /// Trait to abstract over various version of the new session parameters
@@ -77,7 +77,7 @@ impl SpecNewSessionParameters {
         // Filter out entries with the value `null`
         let null_entries = capabilities
             .iter()
-            .filter(|&(_, ref value)| **value == Json::Null)
+            .filter(|&(_, ref value)| **value == Value::Null)
             .map(|(k, _)| k.clone())
             .collect::<Vec<String>>();
         for key in null_entries {
@@ -121,9 +121,9 @@ impl SpecNewSessionParameters {
         Ok(capabilities)
     }
 
-    fn validate_page_load_strategy(value: &Json) -> WebDriverResult<()> {
+    fn validate_page_load_strategy(value: &Value) -> WebDriverResult<()> {
         match value {
-            &Json::String(ref x) => {
+            &Value::String(ref x) => {
                 match &**x {
                     "normal" |
                     "eager" |
@@ -141,13 +141,13 @@ impl SpecNewSessionParameters {
         Ok(())
     }
 
-    fn validate_proxy(proxy_value: &Json) -> WebDriverResult<()> {
+    fn validate_proxy(proxy_value: &Value) -> WebDriverResult<()> {
         let obj = try_opt!(proxy_value.as_object(),
                            ErrorStatus::InvalidArgument,
                            "proxy was not an object");
         for (key, value) in obj.iter() {
             match &**key {
-                "proxyType" => match value.as_string() {
+                "proxyType" => match value.as_str() {
                     Some("pac") |
                     Some("noproxy") |
                     Some("autodetect") |
@@ -160,7 +160,7 @@ impl SpecNewSessionParameters {
                         ErrorStatus::InvalidArgument,
                         "proxyType value was not a string")),
                 },
-                "proxyAutoconfigUrl" => match value.as_string() {
+                "proxyAutoconfigUrl" => match value.as_str() {
                     Some(x) => {
                         try!(Url::parse(x).or(Err(WebDriverError::new(
                             ErrorStatus::InvalidArgument,
@@ -200,8 +200,8 @@ impl SpecNewSessionParameters {
     fn validate_host_domain(name: &str,
                             scheme: &str,
                             obj: &Capabilities,
-                            value: &Json) -> WebDriverResult<()> {
-        match value.as_string() {
+                            value: &Value) -> WebDriverResult<()> {
+        match value.as_str() {
             Some(x) => {
                 if x.contains("::/") {
                     return Err(WebDriverError::new(
@@ -251,7 +251,7 @@ impl SpecNewSessionParameters {
         Ok(())
     }
 
-    fn validate_port(name: &str, value: &Json) -> WebDriverResult<()> {
+    fn validate_port(name: &str, value: &Value) -> WebDriverResult<()> {
         match value.as_i64() {
             Some(x) => {
                 if x < 0 || x > 2i64.pow(16) - 1 {
@@ -260,14 +260,14 @@ impl SpecNewSessionParameters {
                         format!("{} is out of range", name)))
                 }
             }
-            _ => return Err(WebDriverError::new(
+            None => return Err(WebDriverError::new(
                 ErrorStatus::InvalidArgument,
                 format!("{} was not an integer", name)))
         }
         Ok(())
     }
 
-    fn validate_timeouts(value: &Json) -> WebDriverResult<()> {
+    fn validate_timeouts(value: &Value) -> WebDriverResult<()> {
         let obj = try_opt!(value.as_object(),
                            ErrorStatus::InvalidArgument,
                            "timeouts capability was not an object");
@@ -291,8 +291,8 @@ impl SpecNewSessionParameters {
         Ok(())
     }
 
-    fn validate_unhandled_prompt_behaviour(value: &Json) -> WebDriverResult<()> {
-        let behaviour = try_opt!(value.as_string(),
+    fn validate_unhandled_prompt_behaviour(value: &Value) -> WebDriverResult<()> {
+        let behaviour = try_opt!(value.as_str(),
                                  ErrorStatus::InvalidArgument,
                                  "unhandledPromptBehaviour capability was not a string");
         match behaviour {
@@ -305,7 +305,7 @@ impl SpecNewSessionParameters {
 }
 
 impl Parameters for SpecNewSessionParameters {
-    fn from_json(body: &Json) -> WebDriverResult<SpecNewSessionParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<SpecNewSessionParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -317,13 +317,13 @@ impl Parameters for SpecNewSessionParameters {
             ErrorStatus::InvalidArgument,
                      "'capabilities' parameter is not an object");
 
-        let default_always_match = Json::Object(Capabilities::new());
+        let default_always_match = Value::Object(Capabilities::new());
         let always_match = try_opt!(capabilities.get("alwaysMatch")
                                    .unwrap_or(&default_always_match)
                                    .as_object(),
                                    ErrorStatus::InvalidArgument,
                                    "'alwaysMatch' parameter is not an object");
-        let default_first_matches = Json::Array(vec![]);
+        let default_first_matches = Value::Array(vec![]);
         let first_matches = try!(
             try_opt!(capabilities.get("firstMatch")
                      .unwrap_or(&default_first_matches)
@@ -344,21 +344,24 @@ impl Parameters for SpecNewSessionParameters {
     }
 }
 
-impl ToJson for SpecNewSessionParameters {
-    fn to_json(&self) -> Json {
-        let mut body = BTreeMap::new();
-        let mut capabilities = BTreeMap::new();
-        capabilities.insert("alwaysMatch".into(), self.alwaysMatch.to_json());
-        capabilities.insert("firstMatch".into(), self.firstMatch.to_json());
-        body.insert("capabilities".into(), capabilities.to_json());
-        Json::Object(body)
+impl<'a> From<&'a SpecNewSessionParameters> for Value {
+    fn from(params: &'a SpecNewSessionParameters) -> Value {
+        let mut body = Map::new();
+        let mut capabilities = Map::new();
+        capabilities.insert("alwaysMatch".into(), Value::Object(params.alwaysMatch.clone()));
+        capabilities.insert("firstMatch".into(), Value::Array(params.firstMatch.clone()
+                                                              .into_iter()
+                                                              .map(|x| Value::Object(x))
+                                                              .collect::<Vec<_>>()));
+        body.insert("capabilities".into(), Value::Object(capabilities));
+        Value::Object(body)
     }
 }
 
 impl CapabilitiesMatching for SpecNewSessionParameters {
     fn match_browser<T: BrowserCapabilities>(&self, browser_capabilities: &mut T)
                                              -> WebDriverResult<Option<Capabilities>> {
-        let default = vec![BTreeMap::new()];
+        let default = vec![Map::new()];
         let capabilities_list = if self.firstMatch.len() > 0 {
             &self.firstMatch
         } else {
@@ -376,7 +379,9 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                         "'firstMatch' key shadowed a value in 'alwaysMatch'"));
                 }
                 let mut merged = self.alwaysMatch.clone();
-                merged.append(&mut first_match_entry.clone());
+                for (key, value) in first_match_entry.clone().into_iter() {
+                    merged.insert(key, value);
+                }
                 Ok(merged)
             })
             .map(|merged| merged.and_then(|x| self.validate(x, browser_capabilities)))
@@ -395,7 +400,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                                 .ok()
                                 .and_then(|x| x);
 
-                            if value.as_string() != browserValue.as_ref().map(|x| &**x) {
+                            if value.as_str() != browserValue.as_ref().map(|x| &**x) {
                                     return None;
                             }
                         },
@@ -405,7 +410,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                                 .ok()
                                 .and_then(|x| x);
                             // We already validated this was a string
-                            let version_cond = value.as_string().unwrap_or("");
+                            let version_cond = value.as_str().unwrap_or("");
                             if let Some(version) = browserValue {
                                 if !browser_capabilities
                                     .compare_browser_version(&*version, version_cond)
@@ -421,12 +426,12 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                                 .platform_name(merged)
                                 .ok()
                                 .and_then(|x| x);
-                            if value.as_string() != browserValue.as_ref().map(|x| &**x) {
+                            if value.as_str() != browserValue.as_ref().map(|x| &**x) {
                                 return None;
                             }
                         }
                         "acceptInsecureCerts" => {
-                            if value.as_boolean().unwrap_or(false) &&
+                            if value.as_bool().unwrap_or(false) &&
                                 !browser_capabilities
                                 .accept_insecure_certs(merged)
                                 .unwrap_or(false) {
@@ -434,7 +439,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
                             }
                         },
                         "proxy" => {
-                            let default = BTreeMap::new();
+                            let default = Map::new();
                             let proxy = value.as_object().unwrap_or(&default);
                             if !browser_capabilities.accept_proxy(&proxy,
                                                                   merged)
@@ -476,7 +481,7 @@ impl CapabilitiesMatching for LegacyNewSessionParameters {
         /* For now don't do anything much, just merge the
         desired and required and return the merged list. */
 
-        let mut capabilities: Capabilities = BTreeMap::new();
+        let mut capabilities: Capabilities = Map::new();
         self.required.iter()
             .chain(self.desired.iter())
             .fold(&mut capabilities,
@@ -491,7 +496,7 @@ impl CapabilitiesMatching for LegacyNewSessionParameters {
 }
 
 impl Parameters for LegacyNewSessionParameters {
-    fn from_json(body: &Json) -> WebDriverResult<LegacyNewSessionParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<LegacyNewSessionParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -502,7 +507,7 @@ impl Parameters for LegacyNewSessionParameters {
                          ErrorStatus::InvalidArgument,
                          "'desiredCapabilities' parameter is not an object").clone()
             } else {
-                BTreeMap::new()
+                Map::new()
             };
 
         let required_capabilities =
@@ -511,7 +516,7 @@ impl Parameters for LegacyNewSessionParameters {
                          ErrorStatus::InvalidArgument,
                          "'requiredCapabilities' parameter is not an object").clone()
             } else {
-                BTreeMap::new()
+                Map::new()
             };
 
         Ok(LegacyNewSessionParameters {
@@ -521,30 +526,30 @@ impl Parameters for LegacyNewSessionParameters {
     }
 }
 
-impl ToJson for LegacyNewSessionParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("desiredCapabilities".to_owned(), self.desired.to_json());
-        data.insert("requiredCapabilities".to_owned(), self.required.to_json());
-        Json::Object(data)
+impl<'a> From<&'a LegacyNewSessionParameters> for Value {
+    fn from(params: &'a LegacyNewSessionParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("desiredCapabilities".to_owned(), Value::Object(params.desired.clone()));
+        data.insert("requiredCapabilities".to_owned(), Value::Object(params.required.clone()));
+        Value::Object(data)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rustc_serialize::json::Json;
-    use std::collections::BTreeMap;
+    use serde_json::{self, Value};
+    use std::collections::Map;
     use super::{WebDriverResult, SpecNewSessionParameters};
 
-    fn parse(data: &str) -> BTreeMap<String, Json> {
-        Json::from_str(&*data).unwrap().as_object().unwrap().clone()
+    fn parse(data: &str) -> Map<String, Value> {
+        serde_json::from_str(&*data).unwrap().as_object().unwrap().clone()
     }
 
     fn validate_host(name: &str, scheme: &str, caps: &str, value: &str) -> WebDriverResult<()> {
         SpecNewSessionParameters::validate_host_domain(name,
                                                        scheme,
                                                        &parse(caps),
-                                                       &Json::String(value.into()))
+                                                       &Value::String(value.into()))
     }
 
     #[test]

@@ -1,12 +1,11 @@
 use capabilities::{SpecNewSessionParameters, LegacyNewSessionParameters,
                    CapabilitiesMatching, BrowserCapabilities, Capabilities};
-use common::{Date, Nullable, WebElement, FrameId, LocatorStrategy};
+use common::{Date, WebElement, FrameId, LocatorStrategy};
+use std::convert::From;
 use error::{WebDriverResult, WebDriverError, ErrorStatus};
 use httpapi::{Route, WebDriverExtensionRoute, VoidWebDriverExtensionRoute};
 use regex::Captures;
-use rustc_serialize::json;
-use rustc_serialize::json::{ToJson, Json};
-use std::collections::BTreeMap;
+use serde_json::{self, Value, Map};
 use std::default::Default;
 
 #[derive(PartialEq)]
@@ -70,14 +69,14 @@ pub enum WebDriverCommand<T: WebDriverExtensionCommand> {
 }
 
 pub trait WebDriverExtensionCommand : Clone + Send + PartialEq {
-    fn parameters_json(&self) -> Option<Json>;
+    fn parameters_json(&self) -> Option<Value>;
 }
 
 #[derive(Clone, PartialEq)]
 pub struct VoidWebDriverExtensionCommand;
 
 impl WebDriverExtensionCommand for VoidWebDriverExtensionCommand {
-    fn parameters_json(&self) -> Option<Json> {
+    fn parameters_json(&self) -> Option<Value> {
         panic!("No extensions implemented");
     }
 }
@@ -105,7 +104,6 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
                      -> WebDriverResult<WebDriverMessage<U>> {
         let session_id = WebDriverMessage::<U>::get_session_id(params);
         let body_data = try!(WebDriverMessage::<U>::decode_body(raw_body, requires_body));
-
         let command = match match_type {
             Route::NewSession => {
                 let parameters: NewSessionParameters = try!(Parameters::from_json(&body_data));
@@ -341,33 +339,34 @@ impl<U: WebDriverExtensionRoute> WebDriverMessage<U> {
         params.name("sessionId").map(|x| x.as_str().into())
     }
 
-    fn decode_body(body: &str, requires_body: bool) -> WebDriverResult<Json> {
+    fn decode_body(body: &str, requires_body: bool) -> WebDriverResult<Value> {
         if requires_body {
-            match Json::from_str(body) {
-                Ok(x @ Json::Object(_)) => Ok(x),
+            match serde_json::from_str(body) {
+                Ok(x @ Value::Object(_)) => Ok(x),
                 Ok(_) => {
                     Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                                             "Body was not a JSON Object"))
                 }
-                Err(json::ParserError::SyntaxError(_, line, col)) => {
-                    let msg = format!("Failed to decode request as JSON: {}", body);
-                    let stack = format!("Syntax error at :{}:{}", line, col);
-                    Err(WebDriverError::new_with_stack(ErrorStatus::InvalidArgument, msg, stack))
-                }
-                Err(json::ParserError::IoError(e)) => {
-                    Err(WebDriverError::new(ErrorStatus::InvalidArgument,
-                                            format!("I/O error whilst decoding body: {}", e)))
+                Err(e) => {
+                    if e.is_io() {
+                        Err(WebDriverError::new(ErrorStatus::InvalidArgument,
+                                                format!("I/O error whilst decoding body: {}", e)))
+                    } else {
+                        let msg = format!("Failed to decode request as JSON: {}", body);
+                        let stack = format!("Syntax error at :{}:{}", e.line(), e.column());
+                        Err(WebDriverError::new_with_stack(ErrorStatus::InvalidArgument, msg, stack))
+                    }
                 }
             }
         } else {
-            Ok(Json::Null)
+            Ok(Value::Null)
         }
     }
 }
 
-impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
-    fn to_json(&self) -> Json {
-        let parameters = match self.command {
+impl <U:WebDriverExtensionRoute> From<WebDriverMessage<U>> for Value {
+    fn from(msg: WebDriverMessage<U>) -> Value {
+        let parameters = match msg.command {
             WebDriverCommand::AcceptAlert |
             WebDriverCommand::CloseWindow |
             WebDriverCommand::ReleaseActions |
@@ -410,34 +409,34 @@ impl <U:WebDriverExtensionRoute> ToJson for WebDriverMessage<U> {
                 None
             },
 
-            WebDriverCommand::AddCookie(ref x) => Some(x.to_json()),
-            WebDriverCommand::ElementSendKeys(_, ref x) => Some(x.to_json()),
+            WebDriverCommand::AddCookie(ref x) => Some(x.into()),
+            WebDriverCommand::ElementSendKeys(_, ref x) => Some(x.into()),
             WebDriverCommand::ExecuteAsyncScript(ref x) |
-            WebDriverCommand::ExecuteScript(ref x) => Some(x.to_json()),
-            WebDriverCommand::FindElementElement(_, ref x) => Some(x.to_json()),
-            WebDriverCommand::FindElementElements(_, ref x) => Some(x.to_json()),
-            WebDriverCommand::FindElement(ref x) => Some(x.to_json()),
-            WebDriverCommand::FindElements(ref x) => Some(x.to_json()),
-            WebDriverCommand::Get(ref x) => Some(x.to_json()),
-            WebDriverCommand::PerformActions(ref x) => Some(x.to_json()),
-            WebDriverCommand::SendAlertText(ref x) => Some(x.to_json()),
-            WebDriverCommand::SetTimeouts(ref x) => Some(x.to_json()),
-            WebDriverCommand::SetWindowRect(ref x) => Some(x.to_json()),
-            WebDriverCommand::SwitchToFrame(ref x) => Some(x.to_json()),
-            WebDriverCommand::SwitchToWindow(ref x) => Some(x.to_json()),
+            WebDriverCommand::ExecuteScript(ref x) => Some(x.into()),
+            WebDriverCommand::FindElementElement(_, ref x) => Some(x.into()),
+            WebDriverCommand::FindElementElements(_, ref x) => Some(x.into()),
+            WebDriverCommand::FindElement(ref x) => Some(x.into()),
+            WebDriverCommand::FindElements(ref x) => Some(x.into()),
+            WebDriverCommand::Get(ref x) => Some(x.into()),
+            WebDriverCommand::PerformActions(ref x) => Some(x.into()),
+            WebDriverCommand::SendAlertText(ref x) => Some(x.into()),
+            WebDriverCommand::SetTimeouts(ref x) => Some(x.into()),
+            WebDriverCommand::SetWindowRect(ref x) => Some(x.into()),
+            WebDriverCommand::SwitchToFrame(ref x) => Some(x.into()),
+            WebDriverCommand::SwitchToWindow(ref x) => Some(x.into()),
             WebDriverCommand::Extension(ref x) => x.parameters_json(),
         };
 
-        let mut data = BTreeMap::new();
+        let mut data = Map::new();
         if let Some(parameters) = parameters {
             data.insert("parameters".to_string(), parameters);
         }
-        Json::Object(data)
+        Value::Object(data)
     }
 }
 
 pub trait Parameters: Sized {
-    fn from_json(body: &Json) -> WebDriverResult<Self>;
+    fn from_json(body: &Value) -> WebDriverResult<Self>;
 }
 
 /// Wrapper around the two supported variants of new session paramters
@@ -453,7 +452,7 @@ pub enum NewSessionParameters {
 }
 
 impl Parameters for NewSessionParameters {
-    fn from_json(body: &Json) -> WebDriverResult<NewSessionParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<NewSessionParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -465,11 +464,11 @@ impl Parameters for NewSessionParameters {
     }
 }
 
-impl ToJson for NewSessionParameters {
-    fn to_json(&self) -> Json {
-        match self {
-            &NewSessionParameters::Spec(ref x) => x.to_json(),
-            &NewSessionParameters::Legacy(ref x) => x.to_json()
+impl <'a> From<&'a NewSessionParameters> for Value {
+    fn from(params: &'a NewSessionParameters) -> Value {
+        match *params {
+            NewSessionParameters::Spec(ref x) => x.into(),
+            NewSessionParameters::Legacy(ref x) => x.into()
         }
     }
 }
@@ -491,13 +490,13 @@ pub struct GetParameters {
 }
 
 impl Parameters for GetParameters {
-    fn from_json(body: &Json) -> WebDriverResult<GetParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<GetParameters> {
         let data = try_opt!(body.as_object(), ErrorStatus::UnknownError,
                             "Message body was not an object");
         let url = try_opt!(
             try_opt!(data.get("url"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'url' parameter").as_string(),
+                     "Missing 'url' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "'url' not a string");
         Ok(GetParameters {
@@ -506,11 +505,11 @@ impl Parameters for GetParameters {
     }
 }
 
-impl ToJson for GetParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("url".to_string(), self.url.to_json());
-        Json::Object(data)
+impl<'a> From<&'a GetParameters> for Value {
+    fn from(params: &'a GetParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("url".to_string(), Value::String(params.url.clone()));
+        Value::Object(data)
     }
 }
 
@@ -522,7 +521,7 @@ pub struct TimeoutsParameters {
 }
 
 impl Parameters for TimeoutsParameters {
-    fn from_json(body: &Json) -> WebDriverResult<TimeoutsParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<TimeoutsParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -562,75 +561,67 @@ impl Parameters for TimeoutsParameters {
     }
 }
 
-impl ToJson for TimeoutsParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        if let Some(ms) = self.script {
-            data.insert("script".into(), ms.to_json());
+impl<'a> From<&'a TimeoutsParameters> for Value {
+    fn from(params: &'a TimeoutsParameters) -> Value {
+        let mut data = Map::new();
+        if let Some(ms) = params.script {
+            data.insert("script".into(), Value::Number(ms.into()));
         }
-        if let Some(ms) = self.page_load {
-            data.insert("pageLoad".into(), ms.to_json());
+        if let Some(ms) = params.page_load {
+            data.insert("pageLoad".into(), Value::Number(ms.into()));
         }
-        if let Some(ms) = self.implicit {
-            data.insert("implicit".into(), ms.to_json());
+        if let Some(ms) = params.implicit {
+            data.insert("implicit".into(), Value::Number(ms.into()));
         }
-        Json::Object(data)
+        Value::Object(data)
     }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct WindowRectParameters {
-    pub x: Nullable<i64>,
-    pub y: Nullable<i64>,
-    pub width: Nullable<u64>,
-    pub height: Nullable<u64>,
+    pub x: Option<i64>,
+    pub y: Option<i64>,
+    pub width: Option<u64>,
+    pub height: Option<u64>,
 }
 
 impl Parameters for WindowRectParameters {
-    fn from_json(body: &Json) -> WebDriverResult<WindowRectParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<WindowRectParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
 
         let x = match data.get("x") {
-            Some(json) => {
-                try!(Nullable::from_json(json, |n| {
-                    Ok((try_opt!(n.as_i64(),
-                                 ErrorStatus::InvalidArgument,
-                                 "'x' is not an integer")))
-                }))
+            Some(n) => {
+                Some(try_opt!(n.as_i64(),
+                              ErrorStatus::InvalidArgument,
+                              "'x' is not an integer"))
             }
-            None => Nullable::Null,
+            None => None,
         };
         let y = match data.get("y") {
-            Some(json) => {
-                try!(Nullable::from_json(json, |n| {
-                    Ok((try_opt!(n.as_i64(),
-                                 ErrorStatus::InvalidArgument,
-                                 "'y' is not an integer")))
-                }))
+            Some(n) => {
+                Some(try_opt!(n.as_i64(),
+                              ErrorStatus::InvalidArgument,
+                              "'y' is not an integer"))
             }
-            None => Nullable::Null,
+            None => None,
         };
         let width = match data.get("width") {
-            Some(json) => {
-                try!(Nullable::from_json(json, |n| {
-                    Ok((try_opt!(n.as_u64(),
-                                 ErrorStatus::InvalidArgument,
-                                 "'width' is not a positive integer")))
-                }))
+            Some(n) => {
+                Some(try_opt!(n.as_u64(),
+                              ErrorStatus::InvalidArgument,
+                              "'width' is not a positive integer"))
             }
-            None => Nullable::Null,
+            None => None,
         };
         let height = match data.get("height") {
-            Some(json) => {
-                try!(Nullable::from_json(json, |n| {
-                    Ok((try_opt!(n.as_u64(),
-                                 ErrorStatus::InvalidArgument,
-                                 "'height' is not a positive integer")))
-                }))
+            Some(n) => {
+                Some(try_opt!(n.as_u64(),
+                              ErrorStatus::InvalidArgument,
+                              "'height' is not a positive integer"))
             }
-            None => Nullable::Null,
+            None => None,
         };
 
         Ok(WindowRectParameters {
@@ -642,14 +633,14 @@ impl Parameters for WindowRectParameters {
     }
 }
 
-impl ToJson for WindowRectParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("x".to_string(), self.x.to_json());
-        data.insert("y".to_string(), self.y.to_json());
-        data.insert("width".to_string(), self.width.to_json());
-        data.insert("height".to_string(), self.height.to_json());
-        Json::Object(data)
+impl<'a> From<&'a WindowRectParameters> for Value {
+    fn from(params: &'a WindowRectParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("x".to_string(), params.x.map(|x| Value::Number(x.into())).unwrap_or(Value::Null));
+        data.insert("y".to_string(), params.y.map(|x| Value::Number(x.into())).unwrap_or(Value::Null));
+        data.insert("width".to_string(), params.width.map(|x| Value::Number(x.into())).unwrap_or(Value::Null));
+        data.insert("height".to_string(), params.height.map(|x| Value::Number(x.into())).unwrap_or(Value::Null));
+        Value::Object(data)
     }
 }
 
@@ -659,13 +650,13 @@ pub struct SwitchToWindowParameters {
 }
 
 impl Parameters for SwitchToWindowParameters {
-    fn from_json(body: &Json) -> WebDriverResult<SwitchToWindowParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<SwitchToWindowParameters> {
         let data = try_opt!(body.as_object(), ErrorStatus::UnknownError,
                             "Message body was not an object");
         let handle = try_opt!(
             try_opt!(data.get("handle"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'handle' parameter").as_string(),
+                     "Missing 'handle' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "'handle' not a string");
         return Ok(SwitchToWindowParameters {
@@ -674,11 +665,11 @@ impl Parameters for SwitchToWindowParameters {
     }
 }
 
-impl ToJson for SwitchToWindowParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("handle".to_string(), self.handle.to_json());
-        Json::Object(data)
+impl<'a> From<&'a SwitchToWindowParameters> for Value {
+    fn from(params: &'a SwitchToWindowParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("handle".to_string(), params.handle.clone().into());
+        Value::Object(data)
     }
 }
 
@@ -689,7 +680,7 @@ pub struct LocatorParameters {
 }
 
 impl Parameters for LocatorParameters {
-    fn from_json(body: &Json) -> WebDriverResult<LocatorParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<LocatorParameters> {
         let data = try_opt!(body.as_object(), ErrorStatus::UnknownError,
                             "Message body was not an object");
 
@@ -701,7 +692,7 @@ impl Parameters for LocatorParameters {
         let value = try_opt!(
             try_opt!(data.get("value"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'value' parameter").as_string(),
+                     "Missing 'value' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "Could not convert using to string").to_string();
 
@@ -712,12 +703,12 @@ impl Parameters for LocatorParameters {
     }
 }
 
-impl ToJson for LocatorParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("using".to_string(), self.using.to_json());
-        data.insert("value".to_string(), self.value.to_json());
-        Json::Object(data)
+impl<'a> From<&'a LocatorParameters> for Value {
+    fn from(params: &'a LocatorParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("using".to_string(), params.using.into());
+        data.insert("value".to_string(), params.value.clone().into());
+        Value::Object(data)
     }
 }
 
@@ -727,7 +718,7 @@ pub struct SwitchToFrameParameters {
 }
 
 impl Parameters for SwitchToFrameParameters {
-    fn from_json(body: &Json) -> WebDriverResult<SwitchToFrameParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<SwitchToFrameParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::UnknownError,
                             "Message body was not an object");
@@ -741,11 +732,11 @@ impl Parameters for SwitchToFrameParameters {
     }
 }
 
-impl ToJson for SwitchToFrameParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("id".to_string(), self.id.to_json());
-        Json::Object(data)
+impl<'a> From<&'a SwitchToFrameParameters> for Value {
+    fn from(params: &'a SwitchToFrameParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("id".to_string(), params.id.clone().into());
+        Value::Object(data)
     }
 }
 
@@ -755,13 +746,13 @@ pub struct SendKeysParameters {
 }
 
 impl Parameters for SendKeysParameters {
-    fn from_json(body: &Json) -> WebDriverResult<SendKeysParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<SendKeysParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Message body was not an object");
         let text = try_opt!(try_opt!(data.get("text"),
                                      ErrorStatus::InvalidArgument,
-                                     "Missing 'text' parameter").as_string(),
+                                     "Missing 'text' parameter").as_str(),
                             ErrorStatus::InvalidArgument,
                             "Could not convert 'text' to string");
 
@@ -771,22 +762,22 @@ impl Parameters for SendKeysParameters {
     }
 }
 
-impl ToJson for SendKeysParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("value".to_string(), self.text.to_json());
-        Json::Object(data)
+impl<'a> From<&'a SendKeysParameters> for Value {
+    fn from(params: &'a SendKeysParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("value".to_string(), params.text.clone().into());
+        Value::Object(data)
     }
 }
 
 #[derive(PartialEq)]
 pub struct JavascriptCommandParameters {
     pub script: String,
-    pub args: Nullable<Vec<Json>>
+    pub args: Option<Vec<Value>>
 }
 
 impl Parameters for JavascriptCommandParameters {
-    fn from_json(body: &Json) -> WebDriverResult<JavascriptCommandParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<JavascriptCommandParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Message body was not an object");
@@ -795,19 +786,15 @@ impl Parameters for JavascriptCommandParameters {
                                  ErrorStatus::InvalidArgument,
                                  "Missing args parameter");
 
-        let args = try!(Nullable::from_json(
-            args_json,
-            |x| {
-                Ok((try_opt!(x.as_array(),
-                             ErrorStatus::InvalidArgument,
-                             "Failed to convert args to Array")).clone())
-            }));
+        let args = Some(try_opt!(args_json.as_array(),
+                                 ErrorStatus::InvalidArgument,
+                                 "Failed to convert args to Array").clone());
 
          //TODO: Look for WebElements in args?
         let script = try_opt!(
             try_opt!(data.get("script"),
                      ErrorStatus::InvalidArgument,
-                     "Missing script parameter").as_string(),
+                     "Missing script parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "Failed to convert script to String");
         Ok(JavascriptCommandParameters {
@@ -817,44 +804,44 @@ impl Parameters for JavascriptCommandParameters {
     }
 }
 
-impl ToJson for JavascriptCommandParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a JavascriptCommandParameters> for Value {
+    fn from(params: &'a JavascriptCommandParameters) -> Value {
+        let mut data = Map::new();
         //TODO: Wrap script so that it becomes marionette-compatible
-        data.insert("script".to_string(), self.script.to_json());
-        data.insert("args".to_string(), self.args.to_json());
-        Json::Object(data)
+        data.insert("script".to_string(), params.script.clone().into());
+        data.insert("args".to_string(), params.args.clone()
+                    .map(|x| Value::Array(x))
+                    .unwrap_or(Value::Null));
+        Value::Object(data)
     }
 }
 
 #[derive(PartialEq)]
 pub struct GetNamedCookieParameters {
-    pub name: Nullable<String>,
+    pub name: Option<String>,
 }
 
 impl Parameters for GetNamedCookieParameters {
-    fn from_json(body: &Json) -> WebDriverResult<GetNamedCookieParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<GetNamedCookieParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Message body was not an object");
         let name_json = try_opt!(data.get("name"),
                                  ErrorStatus::InvalidArgument,
                                  "Missing 'name' parameter");
-        let name = try!(Nullable::from_json(name_json, |x| {
-            Ok(try_opt!(x.as_string(),
-                        ErrorStatus::InvalidArgument,
-                        "Failed to convert name to string")
-                .to_string())
-        }));
+        let name = Some(try_opt!(name_json.as_str(),
+                                 ErrorStatus::InvalidArgument,
+                                 "Failed to convert name to string")
+                        .into());
         return Ok(GetNamedCookieParameters { name: name });
     }
 }
 
-impl ToJson for GetNamedCookieParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("name".to_string(), self.name.to_json());
-        Json::Object(data)
+impl<'a> From<&'a GetNamedCookieParameters> for Value {
+    fn from(params: &'a GetNamedCookieParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("name".to_string(), params.name.clone().map(|x| x.into()).unwrap_or(Value::Null));
+        Value::Object(data)
     }
 }
 
@@ -862,86 +849,74 @@ impl ToJson for GetNamedCookieParameters {
 pub struct AddCookieParameters {
     pub name: String,
     pub value: String,
-    pub path: Nullable<String>,
-    pub domain: Nullable<String>,
-    pub expiry: Nullable<Date>,
+    pub path: Option<String>,
+    pub domain: Option<String>,
+    pub expiry: Option<Date>,
     pub secure: bool,
     pub httpOnly: bool
 }
 
 impl Parameters for AddCookieParameters {
-    fn from_json(body: &Json) -> WebDriverResult<AddCookieParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<AddCookieParameters> {
         if !body.is_object() {
             return Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                                            "Message body was not an object"));
         }
 
-        let data = try_opt!(body.find("cookie").and_then(|x| x.as_object()),
+        let data = try_opt!(body.get("cookie").and_then(|x| x.as_object()),
                             ErrorStatus::UnableToSetCookie,
                             "Cookie parameter not found or not an object");
 
         let name = try_opt!(
             try_opt!(data.get("name"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'name' parameter").as_string(),
+                     "Missing 'name' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "'name' is not a string").to_string();
 
         let value = try_opt!(
             try_opt!(data.get("value"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'value' parameter").as_string(),
+                     "Missing 'value' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "'value' is not a string").to_string();
 
         let path = match data.get("path") {
             Some(path_json) => {
-                try!(Nullable::from_json(
-                    path_json,
-                    |x| {
-                        Ok(try_opt!(x.as_string(),
-                                    ErrorStatus::InvalidArgument,
-                                    "Failed to convert path to String").to_string())
-                    }))
+                Some(try_opt!(path_json.as_str(),
+                              ErrorStatus::InvalidArgument,
+                              "Failed to convert path to String").to_string())
             },
-            None => Nullable::Null
+            None => None
         };
 
         let domain = match data.get("domain") {
             Some(domain_json) => {
-                try!(Nullable::from_json(
-                    domain_json,
-                    |x| {
-                        Ok(try_opt!(x.as_string(),
-                                    ErrorStatus::InvalidArgument,
-                                    "Failed to convert domain to String").to_string())
-                    }))
+                Some(try_opt!(domain_json.as_str(),
+                              ErrorStatus::InvalidArgument,
+                              "Failed to convert domain to String").to_string())
             },
-            None => Nullable::Null
+            None => None
         };
 
         let expiry = match data.get("expiry") {
             Some(expiry_json) => {
-                try!(Nullable::from_json(
-                    expiry_json,
-                    |x| {
-                        Ok(Date::new(try_opt!(x.as_u64(),
-                                              ErrorStatus::InvalidArgument,
-                                              "Failed to convert expiry to Date")))
-                    }))
+                Some(Date::new(try_opt!(expiry_json.as_u64(),
+                                        ErrorStatus::InvalidArgument,
+                                        "Failed to convert expiry to Date")))
             },
-            None => Nullable::Null
+            None => None
         };
 
         let secure = match data.get("secure") {
-            Some(x) => try_opt!(x.as_boolean(),
+            Some(x) => try_opt!(x.as_bool(),
                                 ErrorStatus::InvalidArgument,
                                 "Failed to convert secure to boolean"),
             None => false
         };
 
         let http_only = match data.get("httpOnly") {
-            Some(x) => try_opt!(x.as_boolean(),
+            Some(x) => try_opt!(x.as_bool(),
                                 ErrorStatus::InvalidArgument,
                                 "Failed to convert httpOnly to boolean"),
             None => false
@@ -959,37 +934,33 @@ impl Parameters for AddCookieParameters {
     }
 }
 
-impl ToJson for AddCookieParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("name".to_string(), self.name.to_json());
-        data.insert("value".to_string(), self.value.to_json());
-        data.insert("path".to_string(), self.path.to_json());
-        data.insert("domain".to_string(), self.domain.to_json());
-        data.insert("expiry".to_string(), self.expiry.to_json());
-        data.insert("secure".to_string(), self.secure.to_json());
-        data.insert("httpOnly".to_string(), self.httpOnly.to_json());
-        Json::Object(data)
+impl<'a> From<&'a AddCookieParameters> for Value {
+    fn from(params: &'a AddCookieParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("name".to_string(), params.name.clone().into());
+        data.insert("value".to_string(), params.value.clone().into());
+        data.insert("path".to_string(), params.path.clone().map(|x| x.into()).unwrap_or(Value::Null));
+        data.insert("domain".to_string(), params.domain.clone().map(|x| x.into()).unwrap_or(Value::Null));
+        data.insert("expiry".to_string(), params.expiry.clone().map(|x| x.into()).unwrap_or(Value::Null));
+        data.insert("secure".to_string(), params.secure.into());
+        data.insert("httpOnly".to_string(), params.httpOnly.into());
+        Value::Object(data)
     }
 }
 
 #[derive(PartialEq)]
 pub struct TakeScreenshotParameters {
-    pub element: Nullable<WebElement>
+    pub element: Option<WebElement>
 }
 
 impl Parameters for TakeScreenshotParameters {
-    fn from_json(body: &Json) -> WebDriverResult<TakeScreenshotParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<TakeScreenshotParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Message body was not an object");
         let element = match data.get("element") {
-            Some(element_json) => try!(Nullable::from_json(
-                element_json,
-                |x| {
-                    Ok(try!(WebElement::from_json(x)))
-                })),
-            None => Nullable::Null
+            Some(element_json) => Some(try!(WebElement::from_json(element_json))),
+            None => None
         };
 
         return Ok(TakeScreenshotParameters {
@@ -998,11 +969,11 @@ impl Parameters for TakeScreenshotParameters {
     }
 }
 
-impl ToJson for TakeScreenshotParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("element".to_string(), self.element.to_json());
-        Json::Object(data)
+impl<'a> From<&'a TakeScreenshotParameters> for Value {
+    fn from(params: &'a TakeScreenshotParameters) -> Value {
+        let mut data = Map::new();
+        data.insert("element".to_string(), params.element.clone().map(|x| (&x).into()).unwrap_or(Value::Null));
+        Value::Object(data)
     }
 }
 
@@ -1012,12 +983,12 @@ pub struct ActionsParameters {
 }
 
 impl Parameters for ActionsParameters {
-    fn from_json(body: &Json) -> WebDriverResult<ActionsParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<ActionsParameters> {
         try_opt!(body.as_object(),
                  ErrorStatus::InvalidArgument,
                  "Message body was not an object");
         let actions = try_opt!(
-            try_opt!(body.find("actions"),
+            try_opt!(body.get("actions"),
                      ErrorStatus::InvalidArgument,
                      "No actions parameter found").as_array(),
             ErrorStatus::InvalidArgument,
@@ -1033,35 +1004,35 @@ impl Parameters for ActionsParameters {
     }
 }
 
-impl ToJson for ActionsParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a ActionsParameters> for Value {
+    fn from(params: &'a ActionsParameters) -> Value {
+        let mut data = Map::new();
         data.insert("actions".to_owned(),
-                    self.actions.iter().map(|x| x.to_json()).collect::<Vec<Json>>().to_json());
-        Json::Object(data)
+                    params.actions.iter().map(|x| x.into()).collect::<Vec<Value>>().into());
+        Value::Object(data)
     }
 }
 
 #[derive(PartialEq)]
 pub struct ActionSequence {
-    pub id: Nullable<String>,
+    pub id: Option<String>,
     pub actions: ActionsType
 }
 
 impl Parameters for ActionSequence {
-    fn from_json(body: &Json) -> WebDriverResult<ActionSequence> {
+    fn from_json(body: &Value) -> WebDriverResult<ActionSequence> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Actions chain was not an object");
 
         let type_name = try_opt!(try_opt!(data.get("type"),
                                           ErrorStatus::InvalidArgument,
-                                          "Missing type parameter").as_string(),
+                                          "Missing type parameter").as_str(),
                                  ErrorStatus::InvalidArgument,
                                  "Parameter ;type' was not a string");
 
         let id = match data.get("id") {
-            Some(x) => Some(try_opt!(x.as_string(),
+            Some(x) => Some(try_opt!(x.as_str(),
                                      ErrorStatus::InvalidArgument,
                                      "Parameter 'id' was not a string").to_owned()),
             None => None
@@ -1083,28 +1054,28 @@ impl Parameters for ActionSequence {
     }
 }
 
-impl ToJson for ActionSequence {
-    fn to_json(&self) -> Json {
-        let mut data: BTreeMap<String, Json> = BTreeMap::new();
-        data.insert("id".into(), self.id.to_json());
-        let (action_type, actions) = match self.actions {
+impl<'a> From<&'a ActionSequence> for Value {
+    fn from(params: &'a ActionSequence) -> Value {
+        let mut data: Map<String, Value> = Map::new();
+        data.insert("id".into(), params.id.clone().map(|x| x.into()).unwrap_or(Value::Null));
+        let (action_type, actions) = match params.actions {
             ActionsType::Null(ref actions) => {
                 ("none",
-                 actions.iter().map(|x| x.to_json()).collect::<Vec<Json>>())
+                 actions.iter().map(|x| x.into()).collect::<Vec<Value>>())
             }
             ActionsType::Key(ref actions) => {
                 ("key",
-                 actions.iter().map(|x| x.to_json()).collect::<Vec<Json>>())
+                 actions.iter().map(|x| x.into()).collect::<Vec<Value>>())
             }
             ActionsType::Pointer(ref parameters, ref actions) => {
-                data.insert("parameters".into(), parameters.to_json());
+                data.insert("parameters".into(), parameters.into());
                 ("pointer",
-                 actions.iter().map(|x| x.to_json()).collect::<Vec<Json>>())
+                 actions.iter().map(|x| x.into()).collect::<Vec<Value>>())
             }
         };
-        data.insert("type".into(), action_type.to_json());
-        data.insert("actions".into(), actions.to_json());
-        Json::Object(data)
+        data.insert("type".into(), action_type.into());
+        data.insert("actions".into(), actions.into());
+        Value::Object(data)
     }
 }
 
@@ -1116,10 +1087,10 @@ pub enum ActionsType {
 }
 
 impl Parameters for ActionsType {
-    fn from_json(body: &Json) -> WebDriverResult<ActionsType> {
+    fn from_json(body: &Value) -> WebDriverResult<ActionsType> {
         // These unwraps are OK as long as this is only called from ActionSequence::from_json
         let data = body.as_object().expect("Body should be a JSON Object");
-        let actions_type = body.find("type").and_then(|x| x.as_string()).expect("Type should be a string");
+        let actions_type = body.get("type").and_then(|x| x.as_str()).expect("Type should be a string");
         let actions_chain = try_opt!(try_opt!(data.get("actions"),
                                               ErrorStatus::InvalidArgument,
                                               "Missing actions parameter").as_array(),
@@ -1165,8 +1136,8 @@ pub enum PointerType {
 }
 
 impl Parameters for PointerType {
-    fn from_json(body: &Json) -> WebDriverResult<PointerType> {
-        match body.as_string() {
+    fn from_json(body: &Value) -> WebDriverResult<PointerType> {
+        match body.as_str() {
             Some("mouse") => Ok(PointerType::Mouse),
             Some("pen") => Ok(PointerType::Pen),
             Some("touch") => Ok(PointerType::Touch),
@@ -1182,13 +1153,13 @@ impl Parameters for PointerType {
     }
 }
 
-impl ToJson for PointerType {
-    fn to_json(&self) -> Json {
-        match *self {
-            PointerType::Mouse => "mouse".to_json(),
-            PointerType::Pen => "pen".to_json(),
-            PointerType::Touch => "touch".to_json(),
-        }.to_json()
+impl<'a> From<&'a PointerType> for Value {
+    fn from(params: &'a PointerType) -> Value {
+        match *params {
+            PointerType::Mouse => "mouse".into(),
+            PointerType::Pen => "pen".into(),
+            PointerType::Touch => "touch".into(),
+        }
     }
 }
 
@@ -1204,7 +1175,7 @@ pub struct PointerActionParameters {
 }
 
 impl Parameters for PointerActionParameters {
-    fn from_json(body: &Json) -> WebDriverResult<PointerActionParameters> {
+    fn from_json(body: &Value) -> WebDriverResult<PointerActionParameters> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Parameter 'parameters' was not an object");
@@ -1218,12 +1189,12 @@ impl Parameters for PointerActionParameters {
     }
 }
 
-impl ToJson for PointerActionParameters {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a PointerActionParameters> for Value {
+    fn from(params: &'a PointerActionParameters) -> Value {
+        let mut data = Map::new();
         data.insert("pointerType".to_owned(),
-                    self.pointer_type.to_json());
-        Json::Object(data)
+                    (&params.pointer_type).into());
+        Value::Object(data)
     }
 }
 
@@ -1233,14 +1204,14 @@ pub enum NullActionItem {
 }
 
 impl Parameters for NullActionItem {
-    fn from_json(body: &Json) -> WebDriverResult<NullActionItem> {
+    fn from_json(body: &Value) -> WebDriverResult<NullActionItem> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Actions chain was not an object");
         let type_name = try_opt!(
             try_opt!(data.get("type"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'type' parameter").as_string(),
+                     "Missing 'type' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "Parameter 'type' was not a string");
         match type_name {
@@ -1252,10 +1223,10 @@ impl Parameters for NullActionItem {
     }
 }
 
-impl ToJson for NullActionItem {
-    fn to_json(&self) -> Json {
-        match self {
-            &NullActionItem::General(ref x) => x.to_json(),
+impl<'a> From<&'a NullActionItem> for Value {
+    fn from(params: &'a NullActionItem) -> Value {
+        match *params {
+            NullActionItem::General(ref x) => x.into(),
         }
     }
 }
@@ -1267,14 +1238,14 @@ pub enum KeyActionItem {
 }
 
 impl Parameters for KeyActionItem {
-    fn from_json(body: &Json) -> WebDriverResult<KeyActionItem> {
+    fn from_json(body: &Value) -> WebDriverResult<KeyActionItem> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Key action item was not an object");
         let type_name = try_opt!(
             try_opt!(data.get("type"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'type' parameter").as_string(),
+                     "Missing 'type' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "Parameter 'type' was not a string");
         match type_name {
@@ -1286,11 +1257,11 @@ impl Parameters for KeyActionItem {
     }
 }
 
-impl ToJson for KeyActionItem {
-    fn to_json(&self) -> Json {
-        match *self {
-            KeyActionItem::General(ref x) => x.to_json(),
-            KeyActionItem::Key(ref x) => x.to_json()
+impl<'a> From<&'a KeyActionItem> for Value {
+    fn from(params: &'a KeyActionItem) -> Value {
+        match *params {
+            KeyActionItem::General(ref x) => x.into(),
+            KeyActionItem::Key(ref x) => x.into()
         }
     }
 }
@@ -1302,14 +1273,14 @@ pub enum PointerActionItem {
 }
 
 impl Parameters for PointerActionItem {
-    fn from_json(body: &Json) -> WebDriverResult<PointerActionItem> {
+    fn from_json(body: &Value) -> WebDriverResult<PointerActionItem> {
         let data = try_opt!(body.as_object(),
                             ErrorStatus::InvalidArgument,
                             "Pointer action item was not an object");
         let type_name = try_opt!(
             try_opt!(data.get("type"),
                      ErrorStatus::InvalidArgument,
-                     "Missing 'type' parameter").as_string(),
+                     "Missing 'type' parameter").as_str(),
             ErrorStatus::InvalidArgument,
             "Parameter 'type' was not a string");
 
@@ -1320,11 +1291,11 @@ impl Parameters for PointerActionItem {
     }
 }
 
-impl ToJson for PointerActionItem {
-    fn to_json(&self) -> Json {
-        match self {
-            &PointerActionItem::General(ref x) => x.to_json(),
-            &PointerActionItem::Pointer(ref x) => x.to_json()
+impl<'a> From<&'a PointerActionItem> for Value {
+    fn from(params: &'a PointerActionItem) -> Value {
+        match *params {
+            PointerActionItem::General(ref x) => x.into(),
+            PointerActionItem::Pointer(ref x) => x.into()
         }
     }
 }
@@ -1335,8 +1306,8 @@ pub enum GeneralAction {
 }
 
 impl Parameters for GeneralAction {
-    fn from_json(body: &Json) -> WebDriverResult<GeneralAction> {
-        match body.find("type").and_then(|x| x.as_string()) {
+    fn from_json(body: &Value) -> WebDriverResult<GeneralAction> {
+        match body.get("type").and_then(|x| x.as_str()) {
             Some("pause") => Ok(GeneralAction::Pause(try!(PauseAction::from_json(body)))),
             _ => Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                                          "Invalid or missing type attribute"))
@@ -1344,10 +1315,10 @@ impl Parameters for GeneralAction {
     }
 }
 
-impl ToJson for GeneralAction {
-    fn to_json(&self) -> Json {
-        match self {
-            &GeneralAction::Pause(ref x) => x.to_json()
+impl<'a> From<&'a GeneralAction> for Value {
+    fn from(params: &'a GeneralAction) -> Value {
+        match *params {
+            GeneralAction::Pause(ref x) => x.into()
         }
     }
 }
@@ -1358,24 +1329,24 @@ pub struct PauseAction {
 }
 
 impl Parameters for PauseAction {
-    fn from_json(body: &Json) -> WebDriverResult<PauseAction> {
-        let default = Json::U64(0);
+    fn from_json(body: &Value) -> WebDriverResult<PauseAction> {
+        let default = Value::Number(0.into());
         Ok(PauseAction {
-            duration: try_opt!(body.find("duration").unwrap_or(&default).as_u64(),
+            duration: try_opt!(body.get("duration").unwrap_or(&default).as_u64(),
                                ErrorStatus::InvalidArgument,
                                "Parameter 'duration' was not a positive integer")
         })
     }
 }
 
-impl ToJson for PauseAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a PauseAction> for Value {
+    fn from(params: &'a PauseAction) -> Value {
+        let mut data = Map::new();
         data.insert("type".to_owned(),
-                    "pause".to_json());
+                    "pause".into());
         data.insert("duration".to_owned(),
-                    self.duration.to_json());
-        Json::Object(data)
+                    params.duration.into());
+        Value::Object(data)
     }
 }
 
@@ -1386,8 +1357,8 @@ pub enum KeyAction {
 }
 
 impl Parameters for KeyAction {
-    fn from_json(body: &Json) -> WebDriverResult<KeyAction> {
-        match body.find("type").and_then(|x| x.as_string()) {
+    fn from_json(body: &Value) -> WebDriverResult<KeyAction> {
+        match body.get("type").and_then(|x| x.as_str()) {
             Some("keyDown") => Ok(KeyAction::Down(try!(KeyDownAction::from_json(body)))),
             Some("keyUp") => Ok(KeyAction::Up(try!(KeyUpAction::from_json(body)))),
             Some(_) | None => Err(WebDriverError::new(ErrorStatus::InvalidArgument,
@@ -1396,11 +1367,11 @@ impl Parameters for KeyAction {
     }
 }
 
-impl ToJson for KeyAction {
-    fn to_json(&self) -> Json {
-        match self {
-            &KeyAction::Down(ref x) => x.to_json(),
-            &KeyAction::Up(ref x) => x.to_json(),
+impl<'a> From<&'a KeyAction> for Value {
+    fn from(params: &'a KeyAction) -> Value {
+        match *params {
+            KeyAction::Down(ref x) => x.into(),
+            KeyAction::Up(ref x) => x.into(),
         }
     }
 }
@@ -1428,11 +1399,11 @@ pub struct KeyUpAction {
 }
 
 impl Parameters for KeyUpAction {
-    fn from_json(body: &Json) -> WebDriverResult<KeyUpAction> {
+    fn from_json(body: &Value) -> WebDriverResult<KeyUpAction> {
         let value_str = try_opt!(
-                try_opt!(body.find("value"),
+                try_opt!(body.get("value"),
                          ErrorStatus::InvalidArgument,
-                         "Missing value parameter").as_string(),
+                         "Missing value parameter").as_str(),
                 ErrorStatus::InvalidArgument,
             "Parameter 'value' was not a string");
 
@@ -1443,14 +1414,14 @@ impl Parameters for KeyUpAction {
     }
 }
 
-impl ToJson for KeyUpAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a KeyUpAction> for Value {
+    fn from(params: &'a KeyUpAction) -> Value {
+        let mut data = Map::new();
         data.insert("type".to_owned(),
-                    "keyUp".to_json());
+                    "keyUp".into());
         data.insert("value".to_string(),
-                    self.value.to_string().to_json());
-        Json::Object(data)
+                    params.value.to_string().into());
+        Value::Object(data)
     }
 }
 
@@ -1460,11 +1431,11 @@ pub struct KeyDownAction {
 }
 
 impl Parameters for KeyDownAction {
-    fn from_json(body: &Json) -> WebDriverResult<KeyDownAction> {
+    fn from_json(body: &Value) -> WebDriverResult<KeyDownAction> {
         let value_str = try_opt!(
-                try_opt!(body.find("value"),
+                try_opt!(body.get("value"),
                          ErrorStatus::InvalidArgument,
-                         "Missing value parameter").as_string(),
+                         "Missing value parameter").as_str(),
                 ErrorStatus::InvalidArgument,
             "Parameter 'value' was not a string");
         let value = try!(validate_key_value(value_str));
@@ -1474,14 +1445,14 @@ impl Parameters for KeyDownAction {
     }
 }
 
-impl ToJson for KeyDownAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a KeyDownAction> for Value {
+    fn from(params: &'a KeyDownAction) -> Value {
+        let mut data = Map::new();
         data.insert("type".to_owned(),
-                    "keyDown".to_json());
+                    "keyDown".into());
         data.insert("value".to_owned(),
-                    self.value.to_string().to_json());
-        Json::Object(data)
+                    params.value.to_string().into());
+        Value::Object(data)
     }
 }
 
@@ -1493,9 +1464,9 @@ pub enum PointerOrigin {
 }
 
 impl Parameters for PointerOrigin {
-    fn from_json(body: &Json) -> WebDriverResult<PointerOrigin> {
+    fn from_json(body: &Value) -> WebDriverResult<PointerOrigin> {
         match *body {
-            Json::String(ref x) => {
+            Value::String(ref x) => {
                 match &**x {
                     "viewport" => Ok(PointerOrigin::Viewport),
                     "pointer" => Ok(PointerOrigin::Pointer),
@@ -1503,19 +1474,19 @@ impl Parameters for PointerOrigin {
                                                  "Unknown pointer origin"))
                 }
             },
-            Json::Object(_) => Ok(PointerOrigin::Element(try!(WebElement::from_json(body)))),
+            Value::Object(_) => Ok(PointerOrigin::Element(try!(WebElement::from_json(body)))),
             _ => Err(WebDriverError::new(ErrorStatus::InvalidArgument,
                         "Pointer origin was not a string or an object"))
         }
     }
 }
 
-impl ToJson for PointerOrigin {
-    fn to_json(&self) -> Json {
-        match *self {
-            PointerOrigin::Viewport => "viewport".to_json(),
-            PointerOrigin::Pointer => "pointer".to_json(),
-            PointerOrigin::Element(ref x) => x.to_json(),
+impl<'a> From<&'a PointerOrigin> for Value {
+    fn from(params: &'a PointerOrigin) -> Value {
+        match *params {
+            PointerOrigin::Viewport => "viewport".into(),
+            PointerOrigin::Pointer => "pointer".into(),
+            PointerOrigin::Element(ref x) => x.into(),
         }
     }
 }
@@ -1535,8 +1506,8 @@ pub enum PointerAction {
 }
 
 impl Parameters for PointerAction {
-    fn from_json(body: &Json) -> WebDriverResult<PointerAction> {
-        match body.find("type").and_then(|x| x.as_string()) {
+    fn from_json(body: &Value) -> WebDriverResult<PointerAction> {
+        match body.get("type").and_then(|x| x.as_str()) {
             Some("pointerUp") => Ok(PointerAction::Up(try!(PointerUpAction::from_json(body)))),
             Some("pointerDown") => Ok(PointerAction::Down(try!(PointerDownAction::from_json(body)))),
             Some("pointerMove") => Ok(PointerAction::Move(try!(PointerMoveAction::from_json(body)))),
@@ -1548,17 +1519,17 @@ impl Parameters for PointerAction {
     }
 }
 
-impl ToJson for PointerAction {
-    fn to_json(&self) -> Json {
-        match self {
-            &PointerAction::Down(ref x) => x.to_json(),
-            &PointerAction::Up(ref x) => x.to_json(),
-            &PointerAction::Move(ref x) => x.to_json(),
-            &PointerAction::Cancel => {
-                let mut data = BTreeMap::new();
+impl<'a> From<&'a PointerAction> for Value {
+    fn from(params: &'a PointerAction) -> Value {
+        match *params {
+            PointerAction::Down(ref x) => x.into(),
+            PointerAction::Up(ref x) => x.into(),
+            PointerAction::Move(ref x) => x.into(),
+            PointerAction::Cancel => {
+                let mut data = Map::new();
                 data.insert("type".to_owned(),
-                            "pointerCancel".to_json());
-                Json::Object(data)
+                            "pointerCancel".into());
+                Value::Object(data)
             }
         }
     }
@@ -1570,9 +1541,9 @@ pub struct PointerUpAction {
 }
 
 impl Parameters for PointerUpAction {
-    fn from_json(body: &Json) -> WebDriverResult<PointerUpAction> {
+    fn from_json(body: &Value) -> WebDriverResult<PointerUpAction> {
         let button = try_opt!(
-            try_opt!(body.find("button"),
+            try_opt!(body.get("button"),
                      ErrorStatus::InvalidArgument,
                      "Missing button parameter").as_u64(),
             ErrorStatus::InvalidArgument,
@@ -1584,13 +1555,13 @@ impl Parameters for PointerUpAction {
     }
 }
 
-impl ToJson for PointerUpAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a PointerUpAction> for Value {
+    fn from(params: &'a PointerUpAction) -> Value {
+        let mut data = Map::new();
         data.insert("type".to_owned(),
-                    "pointerUp".to_json());
-        data.insert("button".to_owned(), self.button.to_json());
-        Json::Object(data)
+                    "pointerUp".into());
+        data.insert("button".to_owned(), params.button.into());
+        Value::Object(data)
     }
 }
 
@@ -1600,9 +1571,9 @@ pub struct PointerDownAction {
 }
 
 impl Parameters for PointerDownAction {
-    fn from_json(body: &Json) -> WebDriverResult<PointerDownAction> {
+    fn from_json(body: &Value) -> WebDriverResult<PointerDownAction> {
         let button = try_opt!(
-            try_opt!(body.find("button"),
+            try_opt!(body.get("button"),
                      ErrorStatus::InvalidArgument,
                      "Missing button parameter").as_u64(),
             ErrorStatus::InvalidArgument,
@@ -1614,27 +1585,27 @@ impl Parameters for PointerDownAction {
     }
 }
 
-impl ToJson for PointerDownAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
+impl<'a> From<&'a PointerDownAction> for Value {
+    fn from(params: &'a PointerDownAction) -> Value {
+        let mut data = Map::new();
         data.insert("type".to_owned(),
-                    "pointerDown".to_json());
-        data.insert("button".to_owned(), self.button.to_json());
-        Json::Object(data)
+                    "pointerDown".into());
+        data.insert("button".to_owned(), params.button.into());
+        Value::Object(data)
     }
 }
 
 #[derive(PartialEq)]
 pub struct PointerMoveAction {
-    pub duration: Nullable<u64>,
+    pub duration: Option<u64>,
     pub origin: PointerOrigin,
-    pub x: Nullable<i64>,
-    pub y: Nullable<i64>
+    pub x: Option<i64>,
+    pub y: Option<i64>
 }
 
 impl Parameters for PointerMoveAction {
-    fn from_json(body: &Json) -> WebDriverResult<PointerMoveAction> {
-        let duration = match body.find("duration") {
+    fn from_json(body: &Value) -> WebDriverResult<PointerMoveAction> {
+        let duration = match body.get("duration") {
             Some(duration) => Some(try_opt!(duration.as_u64(),
                                             ErrorStatus::InvalidArgument,
                                             "Parameter 'duration' was not a positive integer")),
@@ -1642,12 +1613,12 @@ impl Parameters for PointerMoveAction {
 
         };
 
-        let origin = match body.find("origin") {
+        let origin = match body.get("origin") {
             Some(o) => try!(PointerOrigin::from_json(o)),
             None => PointerOrigin::default()
         };
 
-        let x = match body.find("x") {
+        let x = match body.get("x") {
             Some(x) => {
                 Some(try_opt!(x.as_i64(),
                               ErrorStatus::InvalidArgument,
@@ -1656,7 +1627,7 @@ impl Parameters for PointerMoveAction {
             None => None
         };
 
-        let y = match body.find("y") {
+        let y = match body.get("y") {
             Some(y) => {
                 Some(try_opt!(y.as_i64(),
                               ErrorStatus::InvalidArgument,
@@ -1674,65 +1645,65 @@ impl Parameters for PointerMoveAction {
     }
 }
 
-impl ToJson for PointerMoveAction {
-    fn to_json(&self) -> Json {
-        let mut data = BTreeMap::new();
-        data.insert("type".to_owned(), "pointerMove".to_json());
-        if self.duration.is_value() {
+impl<'a> From<&'a PointerMoveAction> for Value {
+    fn from(params: &'a PointerMoveAction) -> Value {
+        let mut data = Map::new();
+        data.insert("type".to_owned(), "pointerMove".into());
+        if let Some(duration) = params.duration {
             data.insert("duration".to_owned(),
-                        self.duration.to_json());
+                        duration.into());
         }
 
-        data.insert("origin".to_owned(), self.origin.to_json());
+        data.insert("origin".to_owned(), (&params.origin).into());
 
-        if self.x.is_value() {
-            data.insert("x".to_owned(), self.x.to_json());
+        if let Some(x) = params.x {
+            data.insert("x".to_owned(), x.into());
         }
-        if self.y.is_value() {
-            data.insert("y".to_owned(), self.y.to_json());
+        if let Some(y) = params.y {
+            data.insert("y".to_owned(), y.into());
         }
-        Json::Object(data)
+        Value::Object(data)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rustc_serialize::json::Json;
-    use super::{Nullable, Parameters, WindowRectParameters};
+    use serde_json::{self, Value};
+    use super::{Parameters, WindowRectParameters};
 
     #[test]
     fn test_window_rect() {
         let expected = WindowRectParameters {
-            x: Nullable::Value(0i64),
-            y: Nullable::Value(1i64),
-            width: Nullable::Value(2u64),
-            height: Nullable::Value(3u64),
+            x: Some(0i64),
+            y: Some(1i64),
+            width: Some(2u64),
+            height: Some(3u64),
         };
-        let actual = Json::from_str(r#"{"x": 0, "y": 1, "width": 2, "height": 3}"#).unwrap();
+        let actual = serde_json::from_str(r#"{"x": 0, "y": 1, "width": 2, "height": 3}"#).unwrap();
         assert_eq!(expected, Parameters::from_json(&actual).unwrap());
     }
 
     #[test]
     fn test_window_rect_nullable() {
         let expected = WindowRectParameters {
-            x: Nullable::Value(0i64),
-            y: Nullable::Null,
-            width: Nullable::Value(2u64),
-            height: Nullable::Null,
+            x: Some(0i64),
+            y: None,
+            width: Some(2u64),
+            height: None,
         };
-        let actual = Json::from_str(r#"{"x": 0, "y": null, "width": 2, "height": null}"#).unwrap();
+        let actual = serde_json::from_str(r#"{"x": 0, "y": null, "width": 2, "height": null}"#).unwrap();
         assert_eq!(expected, Parameters::from_json(&actual).unwrap());
     }
 
     #[test]
     fn test_window_rect_missing_fields() {
         let expected = WindowRectParameters {
-            x: Nullable::Value(0i64),
-            y: Nullable::Null,
-            width: Nullable::Value(2u64),
-            height: Nullable::Null,
+            x: Some(0i64),
+            y: None,
+            width: Some(2u64),
+            height: None,
         };
-        let actual = Json::from_str(r#"{"x": 0, "width": 2}"#).unwrap();
+        let actual = serde_json::from_str(r#"{"x": 0, "width": 2}"#).unwrap();
         assert_eq!(expected, Parameters::from_json(&actual).unwrap());
     }
 }

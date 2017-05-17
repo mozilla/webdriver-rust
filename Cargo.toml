@@ -10,11 +10,14 @@ keywords = ["webdriver", "browser", "automation", "protocol", "w3c"]
 license = "MPL-2.0"
 
 [dependencies]
+base64 = "0.5"
 backtrace = "0.3"
 cookie = {version = "0.6", default-features = false}
 hyper = "0.10"
 log = "0.3"
 regex = "0.2"
-rustc-serialize = "0.3"
 time = "0.1"
 url = "1"
+serde = "1"
+serde_json = "1"
+serde_derive = "1"
