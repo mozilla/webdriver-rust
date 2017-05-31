@@ -5,7 +5,7 @@ use error::{WebDriverResult, WebDriverError, ErrorStatus};
 
 pub static ELEMENT_KEY: &'static str = "element-6066-11e4-a52e-4f735466cecf";
 
-#[derive(Serialize, PartialEq, Clone, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Date(pub u64);
 
 impl Date {
@@ -21,8 +21,9 @@ impl From<Date> for Value {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct WebElement {
+    #[serde(rename="element-6066-11e4-a52e-4f735466cecf")]
     pub id: String
 }
 
@@ -64,33 +65,11 @@ impl <T> From<T> for WebElement
     }
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum FrameId {
     Short(u16),
-    Element(WebElement),
-    Null
-}
-
-impl FrameId {
-    pub fn from_json(data: &Value) -> WebDriverResult<FrameId> {
-        match data {
-            &Value::Number(ref x) => {
-                let x = try_opt!(x.as_u64(),
-                                 ErrorStatus::NoSuchFrame,
-                                 "frame id out of range");
-                if x > u16::max_value() as u64 || x < u16::min_value() as u64 {
-                    return Err(WebDriverError::new(ErrorStatus::NoSuchFrame,
-                                                   "frame id out of range"))
-                };
-                Ok(FrameId::Short(x as u16))
-            },
-            &Value::Null => Ok(FrameId::Null),
-            &Value::Object(_) => Ok(FrameId::Element(
-                try!(WebElement::from_json(data)))),
-            _ => Err(WebDriverError::new(ErrorStatus::NoSuchFrame,
-                                         "frame id has unexpected type"))
-        }
-    }
+    Element(WebElement)
 }
 
 impl From<FrameId> for Value {
@@ -101,19 +80,20 @@ impl From<FrameId> for Value {
             },
             FrameId::Element(ref x) => {
                 Value::String(x.id.clone())
-            },
-            FrameId::Null => {
-                Value::Null
             }
         }
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Serialize, Deserialize, Debug)]
 pub enum LocatorStrategy {
+    #[serde(rename = "css selector")]
     CSSSelector,
+    #[serde(rename = "link text")]
     LinkText,
+    #[serde(rename = "partial link text")]
     PartialLinkText,
+    #[serde(rename = "xpath")]
     XPath
 }
 

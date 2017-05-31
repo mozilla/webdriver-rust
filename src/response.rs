@@ -203,8 +203,7 @@ impl CookieResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeMap;
-    use serde_json::Value;
+    use serde_json::{self, Map, Value};
     use super::{WebDriverResponse,
                 CloseWindowResponse,
                 CookieResponse,
@@ -217,8 +216,8 @@ mod tests {
 
     fn test(resp: WebDriverResponse, expected_str: &str) {
         let data = resp.to_json_string();
-        let actual = Value::from_str(&*data).unwrap();
-        let expected = Value::from_str(expected_str).unwrap();
+        let actual: Value = serde_json::from_str(&*data).unwrap();
+        let expected: Value = serde_json::from_str(expected_str).unwrap();
         assert_eq!(actual, expected);
     }
 
@@ -236,9 +235,9 @@ mod tests {
             vec![
                 Cookie::new("test".into(),
                             "test_value".into(),
-                            Nullable::Value("/".into()),
-                            Nullable::Null,
-                            Nullable::Null,
+                            Some("/".into()),
+                            None,
+                            None,
                             true,
                             false)
             ]));
@@ -271,7 +270,7 @@ mod tests {
     fn test_new_session() {
         let resp = WebDriverResponse::NewSession(
             NewSessionResponse::new("test".into(),
-                                    Value::Object(BTreeMap::new())));
+                                    Value::Object(Map::new())));
         let expected = r#"{"value": {"sessionId": "test", "capabilities": {}}}"#;
         test(resp, expected);
     }
@@ -286,7 +285,7 @@ mod tests {
 
     #[test]
     fn test_value() {
-        let mut value = BTreeMap::new();
+        let mut value = Map::new();
         value.insert("example".into(), Value::Array(vec![Value::String("test".into())]));
         let resp = WebDriverResponse::Generic(ValueResponse::new(
             Value::Object(value)));

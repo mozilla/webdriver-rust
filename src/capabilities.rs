@@ -1,4 +1,3 @@
-use command::Parameters;
 use std::net::Ipv6Addr;
 use error::{WebDriverResult, WebDriverError, ErrorStatus};
 use std::convert::From;
@@ -64,11 +63,23 @@ pub trait CapabilitiesMatching {
                                              -> WebDriverResult<Option<Capabilities>>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
+pub struct SpecNewSessionParametersWrapper {
+    capabilities: SpecNewSessionParameters
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SpecNewSessionParameters {
     pub alwaysMatch: Capabilities,
     pub firstMatch: Vec<Capabilities>,
 }
+
+impl From<SpecNewSessionParametersWrapper> for SpecNewSessionParameters {
+    fn from(wrapper: SpecNewSessionParametersWrapper) -> SpecNewSessionParameters {
+        wrapper.capabilities
+    }
+}
+
 
 impl SpecNewSessionParameters {
     fn validate<T: BrowserCapabilities>(&self,
@@ -304,46 +315,6 @@ impl SpecNewSessionParameters {
     }
 }
 
-impl Parameters for SpecNewSessionParameters {
-    fn from_json(body: &Value) -> WebDriverResult<SpecNewSessionParameters> {
-        let data = try_opt!(body.as_object(),
-                            ErrorStatus::UnknownError,
-                            "Message body was not an object");
-
-        let capabilities = try_opt!(
-            try_opt!(data.get("capabilities"),
-                     ErrorStatus::InvalidArgument,
-                     "Missing 'capabilities' parameter").as_object(),
-            ErrorStatus::InvalidArgument,
-                     "'capabilities' parameter is not an object");
-
-        let default_always_match = Value::Object(Capabilities::new());
-        let always_match = try_opt!(capabilities.get("alwaysMatch")
-                                   .unwrap_or(&default_always_match)
-                                   .as_object(),
-                                   ErrorStatus::InvalidArgument,
-                                   "'alwaysMatch' parameter is not an object");
-        let default_first_matches = Value::Array(vec![]);
-        let first_matches = try!(
-            try_opt!(capabilities.get("firstMatch")
-                     .unwrap_or(&default_first_matches)
-                     .as_array(),
-                     ErrorStatus::InvalidArgument,
-                     "'firstMatch' parameter is not an array")
-                .iter()
-                .map(|x| x.as_object()
-                     .map(|x| x.clone())
-                     .ok_or(WebDriverError::new(ErrorStatus::InvalidArgument,
-                                                "'firstMatch' entry is not an object")))
-                .collect::<WebDriverResult<Vec<Capabilities>>>());
-
-        return Ok(SpecNewSessionParameters {
-            alwaysMatch: always_match.clone(),
-            firstMatch: first_matches
-        });
-    }
-}
-
 impl<'a> From<&'a SpecNewSessionParameters> for Value {
     fn from(params: &'a SpecNewSessionParameters) -> Value {
         let mut body = Map::new();
@@ -469,7 +440,7 @@ impl CapabilitiesMatching for SpecNewSessionParameters {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct LegacyNewSessionParameters {
     pub desired: Capabilities,
     pub required: Capabilities,
@@ -495,37 +466,6 @@ impl CapabilitiesMatching for LegacyNewSessionParameters {
     }
 }
 
-impl Parameters for LegacyNewSessionParameters {
-    fn from_json(body: &Value) -> WebDriverResult<LegacyNewSessionParameters> {
-        let data = try_opt!(body.as_object(),
-                            ErrorStatus::UnknownError,
-                            "Message body was not an object");
-
-        let desired_capabilities =
-            if let Some(capabilities) = data.get("desiredCapabilities") {
-                try_opt!(capabilities.as_object(),
-                         ErrorStatus::InvalidArgument,
-                         "'desiredCapabilities' parameter is not an object").clone()
-            } else {
-                Map::new()
-            };
-
-        let required_capabilities =
-            if let Some(capabilities) = data.get("requiredCapabilities") {
-                try_opt!(capabilities.as_object(),
-                         ErrorStatus::InvalidArgument,
-                         "'requiredCapabilities' parameter is not an object").clone()
-            } else {
-                Map::new()
-            };
-
-        Ok(LegacyNewSessionParameters {
-            desired: desired_capabilities,
-            required: required_capabilities
-        })
-    }
-}
-
 impl<'a> From<&'a LegacyNewSessionParameters> for Value {
     fn from(params: &'a LegacyNewSessionParameters) -> Value {
         let mut data = Map::new();
@@ -537,12 +477,11 @@ impl<'a> From<&'a LegacyNewSessionParameters> for Value {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::{self, Value};
-    use std::collections::Map;
+    use serde_json::{self, Value, Map};
     use super::{WebDriverResult, SpecNewSessionParameters};
 
     fn parse(data: &str) -> Map<String, Value> {
-        serde_json::from_str(&*data).unwrap().as_object().unwrap().clone()
+        serde_json::from_str::<Value>(&*data).unwrap().as_object().unwrap().clone()
     }
 
     fn validate_host(name: &str, scheme: &str, caps: &str, value: &str) -> WebDriverResult<()> {
