@@ -118,24 +118,24 @@ pub struct ElementRectResponse {
     /// X axis position of the top-left corner of the element relative
     // to the current browsing context’s document element in CSS reference
     // pixels.
-    pub x: f64,
+    pub x: i32,
 
     /// Y axis position of the top-left corner of the element relative
     // to the current browsing context’s document element in CSS reference
     // pixels.
-    pub y: f64,
+    pub y: i32,
 
     /// Height of the element’s [bounding rectangle] in CSS reference
     /// pixels.
     ///
     /// [bounding rectangle]: https://drafts.fxtf.org/geometry/#rectangle
-    pub width: f64,
+    pub width: i32,
 
     /// Width of the element’s [bounding rectangle] in CSS reference
     /// pixels.
     ///
     /// [bounding rectangle]: https://drafts.fxtf.org/geometry/#rectangle
-    pub height: f64,
+    pub height: i32,
 }
 
 #[derive(Debug)]
@@ -143,22 +143,22 @@ pub struct WindowRectResponse {
     /// `WindowProxy`’s [screenX] attribute.
     ///
     /// [screenX]: https://drafts.csswg.org/cssom-view/#dom-window-screenx
-    pub x: f64,
+    pub x: i32,
 
     /// `WindowProxy`’s [screenY] attribute.
     ///
     /// [screenY]: https://drafts.csswg.org/cssom-view/#dom-window-screeny
-    pub y: f64,
+    pub y: i32,
 
     /// Width of the top-level browsing context’s outer dimensions, including
     /// any browser chrome and externally drawn window decorations in CSS
     /// reference pixels.
-    pub width: f64,
+    pub width: i32,
 
     /// Height of the top-level browsing context’s outer dimensions, including
     /// any browser chrome and externally drawn window decorations in CSS
     /// reference pixels.
-    pub height: f64,
+    pub height: i32,
 }
 
 impl ToJson for WindowRectResponse {
@@ -278,26 +278,26 @@ mod tests {
     #[test]
     fn test_element_rect() {
         let rect = ElementRectResponse {
-            x: 0f64,
-            y: 1f64,
-            width: 2f64,
-            height: 3f64,
+            x: 0,
+            y: 1,
+            width: 2,
+            height: 3,
         };
         let resp = WebDriverResponse::ElementRect(rect);
-        let expected = r#"{"value": {"x": 0.0, "y": 1.0, "width": 2.0, "height": 3.0}}"#;
+        let expected = r#"{"value": {"x": 0, "y": 1, "width": 2, "height": 3}}"#;
         test(resp, expected);
     }
 
     #[test]
     fn test_window_rect() {
         let rect = WindowRectResponse {
-            x: 0f64,
-            y: 1f64,
-            width: 2f64,
-            height: 3f64,
+            x: 0,
+            y: 1,
+            width: 2,
+            height: 3,
         };
         let resp = WebDriverResponse::WindowRect(rect);
-        let expected = r#"{"value": {"x": 0.0, "y": 1.0, "width": 2.0, "height": 3.0}}"#;
+        let expected = r#"{"value": {"x": 0, "y": 1, "width": 2, "height": 3}}"#;
         test(resp, expected);
     }
 
