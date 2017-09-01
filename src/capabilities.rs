@@ -234,9 +234,19 @@ impl SpecNewSessionParameters {
                     ErrorStatus::InvalidArgument,
                     format!("{} is not a valid host", host)))));
 
-                if url.username() != "" ||
-                    url.password() != None ||
-                    url.path() != "/" ||
+                if url.username() != "" && url.password() == None {
+                    return Err(WebDriverError::new(
+                        ErrorStatus::InvalidArgument,
+                        format!("Proxy username requires password to be set")));
+                }
+
+                if url.password() != None && url.username() == "" {
+                    return Err(WebDriverError::new(
+                        ErrorStatus::InvalidArgument,
+                        format!("Proxy password requires username to be set")));
+                }
+
+                if url.path() != "/" ||
                     url.query() != None ||
                     url.fragment() != None {
                         return Err(WebDriverError::new(
@@ -527,25 +537,28 @@ mod tests {
 
     #[test]
     fn test_validate_proxy() {
-        // proxy hosts
-        validate_proxy("{\"httpProxy\": \"127.0.0.1\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"127.0.0.1:\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"127.0.0.1:3128\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"localhost\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"localhost:3128\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"[2001:db8::1]\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"[2001:db8::1]:3128\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"example.org\"}").unwrap();
-        validate_proxy("{\"httpProxy\": \"example.org:3128\"}").unwrap();
-
-        assert!(validate_proxy("{\"httpProxy\": \"http://example.org\"}").is_err());
-        assert!(validate_proxy("{\"httpProxy\": \"example.org:-1\"}").is_err());
-        assert!(validate_proxy("{\"httpProxy\": \"2001:db8::1\"}").is_err());
+        // manual proxy hosts
+        validate_proxy(r#"{"httpProxy": "127.0.0.1"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "127.0.0.1:"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "127.0.0.1:3128"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "localhost"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "localhost:3128"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "[2001:db8::1]"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "[2001:db8::1]:3128"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "example.org"}"#).unwrap();
+        validate_proxy(r#"{"httpProxy": "example.org:3128"}"#).unwrap();
+        assert!(validate_proxy(r#"{"httpProxy": "http://example.org"}"#).is_err());
+        assert!(validate_proxy(r#"{"httpProxy": "example.org:-1"}"#).is_err());
+        assert!(validate_proxy(r#"{"httpProxy": "2001:db8::1"}"#).is_err());
 
         // no proxy for manual proxy type
-        validate_proxy("{\"noProxy\": [\"foo\"]}").unwrap();
+        validate_proxy(r#"{"noProxy": ["foo"]}"#).unwrap();
+        assert!(validate_proxy(r#"{"noProxy": "foo"}"#).is_err());
+        assert!(validate_proxy(r#"{"noProxy": [42]}"#).is_err());
 
-        assert!(validate_proxy("{\"noProxy\": \"foo\"}").is_err());
-        assert!(validate_proxy("{\"noProxy\": [42]}").is_err());
+        // username and password
+        validate_proxy(r#"{"httpProxy": "foo:bar@example.org"}"#).unwrap();
+        assert!(validate_proxy(r#"{"httpProxy": "foo@example.org"}"#).is_err());
+        assert!(validate_proxy(r#"{"httpProxy": ":bar@example.org"}"#).is_err());
     }
 }
